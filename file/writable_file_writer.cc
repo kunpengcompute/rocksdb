@@ -891,6 +891,7 @@ IOStatus WritableFileWriter::WriteDirect(
   } else {
     set_seen_error();
   }
+  buf_.Size(0); // TODO: 存在directIO重复写的问题，待确认正确性
   return s;
 }
 

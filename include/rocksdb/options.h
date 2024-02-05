@@ -840,6 +840,10 @@ struct DBOptions {
   // Not supported in ROCKSDB_LITE mode!
   bool use_direct_reads = false;
 
+  // Use O_DIRECT for user write.
+  // Default: false
+  bool use_direct_writes = false;
+
   // Use O_DIRECT for writes in background flush and compactions.
   // Default: false
   // Not supported in ROCKSDB_LITE mode!

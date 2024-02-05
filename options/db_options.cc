@@ -164,7 +164,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
         {"use_direct_writes",
-         {0, OptionType::kBoolean, OptionVerificationType::kDeprecated,
+         {offsetof(struct ImmutableDBOptions, use_direct_writes),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
         {"use_direct_io_for_flush_and_compaction",
          {offsetof(struct ImmutableDBOptions,
@@ -709,6 +710,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       allow_mmap_reads(options.allow_mmap_reads),
       allow_mmap_writes(options.allow_mmap_writes),
       use_direct_reads(options.use_direct_reads),
+      use_direct_writes(options.use_direct_writes),
       use_direct_io_for_flush_and_compaction(
           options.use_direct_io_for_flush_and_compaction),
       allow_fallocate(options.allow_fallocate),
@@ -815,6 +817,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    allow_mmap_writes);
   ROCKS_LOG_HEADER(log, "                       Options.use_direct_reads: %d",
                    use_direct_reads);
+  ROCKS_LOG_HEADER(log, "                       Options.use_direct_writes: %d",
+                   use_direct_writes);
   ROCKS_LOG_HEADER(log,
                    "                       "
                    "Options.use_direct_io_for_flush_and_compaction: %d",

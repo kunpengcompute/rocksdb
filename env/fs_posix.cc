@@ -941,7 +941,7 @@ class PosixFileSystem : public FileSystem {
       const FileOptions& file_options) const override {
     FileOptions optimized = file_options;
     optimized.use_mmap_writes = false;
-    optimized.use_direct_writes = false;
+    optimized.use_direct_writes = file_options.use_direct_writes;
     optimized.fallocate_with_keep_size = true;
     return optimized;
   }
