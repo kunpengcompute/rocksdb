@@ -1,0 +1,4 @@
+--sync=false
+--use_direct_writes=true
+--use_direct_reads=true
+--use_direct_io_for_flush_and_compaction=true
