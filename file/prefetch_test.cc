@@ -2299,13 +2299,8 @@ TEST_F(FilePrefetchBufferTest, SeekWithBlockCacheHit) {
   // Simulate a seek of 4096 bytes at offset 0. Due to the readahead settings,
   // it will do two reads of 4096+8192 and 8192
   Status s = fpb.PrefetchAsync(IOOptions(), r.get(), 0, 4096, &result);
-
-  // Platforms that don't have IO uring may not support async IO.
-  if (s.IsNotSupported()) {
-    return;
-  }
-
-  ASSERT_TRUE(s.IsTryAgain());
+  // Platforms that don't have IO uring may not support async IO
+  ASSERT_TRUE(s.IsTryAgain() || s.IsNotSupported());
   // Simulate a block cache hit
   fpb.UpdateReadPattern(0, 4096, false);
   // Now read some data that straddles the two prefetch buffers - offset 8192 to
