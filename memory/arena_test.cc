@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "memory/arena.h"
+
 #include "test_util/testharness.h"
 #include "util/random.h"
 

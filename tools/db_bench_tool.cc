@@ -7307,7 +7307,8 @@ class Benchmark {
     // the number of iterations is the larger of read_ or write_
     int batch_size = 0;
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
-    FLAGS_write_batch_protection_bytes_per_key, user_timestamp_size_);
+                     FLAGS_write_batch_protection_bytes_per_key,
+                     user_timestamp_size_);
 
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
@@ -7343,7 +7344,8 @@ class Benchmark {
 
         if (batch_size > 1) {
           // 凑batch
-          if ((batch_size + 1) % entries_per_batch_ != 0 && (writes_done + 1) != FLAGS_num) {
+          if ((batch_size + 1) % entries_per_batch_ != 0 &&
+              (writes_done + 1) != FLAGS_num) {
             batch.Put(key, gen.Generate());
             batch_size++;
           } else {
