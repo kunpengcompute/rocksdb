@@ -146,8 +146,7 @@ FileOptions FileSystem::OptimizeForLogWrite(const FileOptions& file_options,
   optimized_file_options.bytes_per_sync = db_options.wal_bytes_per_sync;
   optimized_file_options.writable_file_max_buffer_size =
       db_options.writable_file_max_buffer_size;
-  optimized_file_options.use_direct_writes =
-      db_options.use_direct_writes;
+  optimized_file_options.use_direct_writes = db_options.use_direct_writes;
   return optimized_file_options;
 }
 
