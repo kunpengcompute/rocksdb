@@ -29,10 +29,10 @@ do
 
 		for mod in "randwrite" "readrandom" "r7w3"
 		do
-			if [ "mod" == "randwrite" ]
+			if [ "$mod" == "randwrite" ]
 			then
 				mode1="overwrite2"
-			elif [ "mod" == "r7w3" ]
+			elif [ "$mod" == "r7w3" ]
 			then
 				mode1="readrandomwriterandom"
 			else
