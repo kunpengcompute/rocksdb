@@ -4,7 +4,8 @@
 --initial_auto_readahead_size=16384
 --max_auto_readahead_size=65536
 --block_size=4096
---pin_l0_filter_and_index_blocks_in_cache_true
+--pin_l0_filter_and_index_blocks_in_cache=true
+--cache_index_and_filter_blocks=true
 --level0_file_num_compaction_trigger=2
 --level0_slowdown_writes_trigger=36
 --level0_stop_writes_trigger=48
