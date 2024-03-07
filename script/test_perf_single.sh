@@ -7,7 +7,7 @@ then
 	valuesize=$5
 	cachesize=$6
 	threads=$7
-	perflag=$8
+	perfflag=$8
 	dbdir="/mnt/rocksdb_data/test"
 elif [ $# -eq 9 ]
 then
@@ -18,7 +18,7 @@ then
 	valuesize=$5
 	cachesize=$6
 	threads=$7
-	perflag=$8
+	perfflag=$8
 	dbdir=$9
 else
 	echo para error!
@@ -45,7 +45,7 @@ then
 fi
 
 ((cache_size=cachesize*1024*1024))
-commonpara="--db=${dbdir} --wal_dir --benchmarks="$benchmarks,stats"
+commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks,stats"
 --duration=$duration
 --num=$num
 --key_size=$keysize
