@@ -73,13 +73,13 @@ cfgpara="
 "
 
 perflevel=5
-perfflag="--perf_level=$perflevel"
+perfpara="--perf_level=$perflevel"
 
 if [ $perfflag -eq 0 ]
 then
-	perfflag="--perf_level=$perflevel"
+	perfpara="--perf_level=$perflevel"
 else
-	perfflag=""
+	perfpara=""
 fi
 
 if      [[ "$benchmarks" == "readseq" ]] || 
