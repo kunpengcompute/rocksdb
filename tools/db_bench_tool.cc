@@ -3266,6 +3266,7 @@ class Benchmark {
     }
 
     int bytes_to_fill = std::min(key_size_ - static_cast<int>(pos - start), 8);
+#ifdef DISABLE_COMPACT_CACHE
     if (port::kLittleEndian) {
       for (int i = 0; i < bytes_to_fill; ++i) {
         pos[i] = (v >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
@@ -3277,6 +3278,16 @@ class Benchmark {
     if (key_size_ > pos - start) {
       memset(pos, '0', key_size_ - (pos - start));
     }
+#else
+    memset(pos, '0', key_size_);
+    if (port::kLittleEndian) {
+      for(int i = 0; i < bytes_to_fill; ++i) {
+          pos[key_size_ - i - 1] = v >> (8 * i);
+      }
+    } else {
+      memcpy(pos + key_size_ - bytes_to_fill, static_cast<void*>(&v), bytes_to_fill);
+    }
+#endif
   }
 
   void GenerateKeyFromIntForSeek(uint64_t v, int64_t num_keys, Slice* key) {
