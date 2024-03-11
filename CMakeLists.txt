@@ -656,7 +656,14 @@ set(SOURCES
         cache/lru_cache.cc
         cache/secondary_cache.cc
         cache/sharded_cache.cc
-        db/arena_wrapped_db_iter.cc
+)
+if(NOT DISABLE_COMPACT_CACHE)
+list(APPEND SOURCES
+	cache/compact_cache_interface.cc
+)
+endif()
+list(APPEND SOURCES
+	db/arena_wrapped_db_iter.cc
         db/blob/blob_contents.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
@@ -1118,6 +1125,10 @@ string(REGEX REPLACE "[^0-9: /-]+" "" GIT_DATE "${GIT_DATE}")
 
 set(BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/build_version.cc)
 configure_file(util/build_version.cc.in ${BUILD_VERSION_CC} @ONLY)
+
+if(NOT DISABLE_COMPACT_CACHE)
+  list(APPEND THIRDPARTY_LIBS ksal)
+endif()
 
 add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES} ${BUILD_VERSION_CC})
 target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE
