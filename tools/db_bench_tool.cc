@@ -578,6 +578,8 @@ DEFINE_double(cache_low_pri_pool_ratio, 0.0,
 
 DEFINE_string(cache_type, "lru_cache", "Type of block cache.");
 
+DEFINE_string(row_cache_type, "lru_cache", "Type of row cache.");
+
 DEFINE_bool(use_compressed_secondary_cache, false,
             "Use the CompressedSecondaryCache as the secondary cache.");
 
@@ -3097,7 +3099,13 @@ class Benchmark {
       }
 
       return NewLRUCache(opts);
-    } else {
+    } else if (FLAGS_cache_type == "compact_cache") {
+        CompactCacheOptions opts(
+          static_cast<size_t>(capacity), FLAGS_cache_numshardbits,
+          false /*strict_capacity_limit*/,
+          GetCacheAllocator(), kDefaultCacheMetadataChargePolicy);
+          return NewCompactCache(opts);
+    }else {
       fprintf(stderr, "Cache type not supported.");
       exit(1);
     }
@@ -4703,15 +4711,25 @@ class Benchmark {
       }
     }
 
-    if (options.row_cache == nullptr) {
-      if (FLAGS_row_cache_size) {
-        if (FLAGS_cache_numshardbits >= 1) {
-          options.row_cache =
-              NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+    if (options.row_cache == nullptr && FLAGS_row_cache_size) {
+        if (FLAGS_row_cache_type == "lru_cache") {
+            if (FLAGS_cache_numshardbits >= 1) {
+                options.row_cache =
+                    NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+            } else {
+                options.row_cache = NewLRUCache(FLAGS_row_cache_size);
+            }
+        } else if (FLAGS_row_cache_type == "compact_cache") {
+            if (FLAGS_cache_numshardbits >= 1) {
+                options.row_cache =
+                    NewCompactCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+            } else {
+                options.row_cache = NewCompactCache(FLAGS_row_cache_size);
+            }
         } else {
-          options.row_cache = NewLRUCache(FLAGS_row_cache_size);
-        }
-      }
+	    fprintf(stderr, "Cache type not supported.");
+	    exit(1);
+	}
     }
 
     if (options.env == Env::Default()) {
