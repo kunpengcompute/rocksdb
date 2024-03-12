@@ -3099,12 +3099,14 @@ class Benchmark {
       }
 
       return NewLRUCache(opts);
+#ifndef DISABLE_COMPACT_CACHE
     } else if (FLAGS_cache_type == "compact_cache") {
         CompactCacheOptions opts(
           static_cast<size_t>(capacity), FLAGS_cache_numshardbits,
           false /*strict_capacity_limit*/,
           GetCacheAllocator(), kDefaultCacheMetadataChargePolicy);
           return NewCompactCache(opts);
+#endif
     }else {
       fprintf(stderr, "Cache type not supported.");
       exit(1);
@@ -4730,6 +4732,7 @@ class Benchmark {
             } else {
                 options.row_cache = NewLRUCache(FLAGS_row_cache_size);
             }
+#ifndef DISABLE_COMPACT_CACHE
         } else if (FLAGS_row_cache_type == "compact_cache") {
             if (FLAGS_cache_numshardbits >= 1) {
                 options.row_cache =
@@ -4737,6 +4740,7 @@ class Benchmark {
             } else {
                 options.row_cache = NewCompactCache(FLAGS_row_cache_size);
             }
+#endif
         } else {
 	    fprintf(stderr, "Cache type not supported.");
 	    exit(1);

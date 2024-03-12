@@ -1128,6 +1128,8 @@ configure_file(util/build_version.cc.in ${BUILD_VERSION_CC} @ONLY)
 
 if(NOT DISABLE_COMPACT_CACHE)
   list(APPEND THIRDPARTY_LIBS ksal)
+else()
+  add_compile_definitions(DISABLE_COMPACT_CACHE)
 endif()
 
 add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES} ${BUILD_VERSION_CC})
