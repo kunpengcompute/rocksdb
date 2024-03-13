@@ -9,9 +9,9 @@ bytes_written
 )
 
 #cat perfstatsresult
-ssd1=`cat perfstatsresult|grep operation`
-ssd2=`cat perfstatsresult|grep user_key_comparsion_count`
-ssd3=`cat perfstatsresult|grep thread_pool_id`
+ssd1=`cat perfstatsresult|grep operation |tail -1`
+ssd2=`cat perfstatsresult|grep user_key_comparsion_count |tail -1`
+ssd3=`cat perfstatsresult|grep thread_pool_id |tail -1`
 
 if [ $perfflag -eq 0 ]
 then

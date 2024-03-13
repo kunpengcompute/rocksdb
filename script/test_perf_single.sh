@@ -44,14 +44,39 @@ then
 	benchmarks="overwrite"
 fi
 
+benchmarks1=$benchmarks
+if [ "$benchmarks" == "overwrite" ]
+then
+	benchmarks1="overwrite,overwrite,overwrite"
+fi
+
+if [ "$benchmarks" == "readrandom" ]
+then
+        benchmarks1="readrandom,readrandom,readrandom"
+fi
+
+if [ "$benchmarks" == "readrandomwriterandom" ]
+then
+	 benchmarks1="readrandomwriterandom,readrandomwriterandom,readrandomwriterandom"
+fi
+
+cachetype=0 # 0:blockcache, 1:kvcache
 ((cache_size=cachesize*1024*1024))
-commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks,stats"
+if [ $cachetype -eq 0 ]
+then
+	cachepara="--cache_size=${cache_size}"
+else
+	cachepara="--cache_size=8338608 --row_cache_size=${cache_size} --row_cache_type=compact_cache"
+fi
+
+commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks1,stats"
 --duration=$duration
 --num=$num
 --key_size=$keysize
 --value_size=$valuesize
 --threads=$threads
 --cache_size=${cache_size}
+ $cachepara
 "
 
 if [ "$benchmarks" == "readrandomwriterandom" ]
