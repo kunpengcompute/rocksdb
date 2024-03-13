@@ -39,8 +39,6 @@ do
 				mode1="readrandom"
 			fi
 
-			sh test_perf_single.sh ${mode1} $num $dbnum $key $value $cs $threads 1 $dbdir
-			sh test_perf_single.sh ${mode1} $num $dbnum $key $value $cs $threads 1 $dbdir
 			sh test_perf_single.sh ${mode1} $num $dbnum $key $value $cs $threads 1 $dbdir > ${outdir}/${mod}_oplog
 			mv perfstatsresult ${outdir}/${mod}_perfstats
 	                cp $dbdir/LOG ${outdir}/${mod}_LOG
@@ -50,7 +48,7 @@ do
 		echo perfresult:
 		for mod in "fillseq" "overwrite" "randwrite" "readrandom" "r7w3"
 		do
-			cat ${outdir}/${mod}_oplog
+			cat ${outdir}/${mod}_oplog |tail -1
 		done
 	done
 done
