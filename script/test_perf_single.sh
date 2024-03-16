@@ -39,25 +39,21 @@ else
 	duration=0
 fi
 
+num_warmup=0
 if [ "$benchmarks" == "overwrite2" ]
 then
-	benchmarks="overwrite"
-fi
-
-benchmarks1=$benchmarks
-if [ "$benchmarks" == "overwrite" ]
-then
-	benchmarks1="overwrite,overwrite,overwrite"
+        benchmarks="overwrite"
+	num_warmup=2
 fi
 
 if [ "$benchmarks" == "readrandom" ]
 then
-        benchmarks1="readrandom,readrandom,readrandom"
+	num_warmup=2
 fi
 
 if [ "$benchmarks" == "readrandomwriterandom" ]
 then
-	 benchmarks1="readrandomwriterandom,readrandomwriterandom,readrandomwriterandom"
+        benchmarks1="readrandom,readrandom,readrandom"
 fi
 
 cachetype=0 # 0:blockcache, 1:kvcache
@@ -69,7 +65,7 @@ else
 	cachepara="--cache_size=8338608 --row_cache_size=${cache_size} --row_cache_type=compact_cache"
 fi
 
-commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks1,stats"
+commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks[-W${num_warmup}],stats"
 --duration=$duration
 --num=$num
 --key_size=$keysize
