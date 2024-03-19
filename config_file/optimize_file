@@ -18,7 +18,7 @@
 --max_background_jobs=16
 --max_background_flushes=8
 --max_background_compactions=4
---subcompaction=1
+--subcompactions=1
 --max_write_buffer_number=8
 --soft_pending_compaction_bytes_limit=137438953472
 --hard_pending_compaction_bytes_limit=274877906944
