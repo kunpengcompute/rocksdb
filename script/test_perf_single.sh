@@ -53,7 +53,7 @@ fi
 
 if [ "$benchmarks" == "readrandomwriterandom" ]
 then
-        benchmarks1="readrandom,readrandom,readrandom"
+        num_warmup=2
 fi
 
 cachetype=0 # 0:blockcache, 1:kvcache
@@ -123,6 +123,6 @@ fi
 
 sudo sh drop_cache.sh
 sleep 1
-((cores=32/dbnum))
+((cores=32/dbnum-1))
 taskset -c 0-$cores $ssdcmd > perfstatsresult
 sh calculate_result.sh $perfflag
