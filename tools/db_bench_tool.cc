@@ -7341,7 +7341,7 @@ class Benchmark {
         // for all the gets we have done earlier
         Status s;
 
-        if (batch_size > 1) {
+        if (entries_per_batch_ > 1) {
           // 凑batch
           if ((batch_size + 1) % entries_per_batch_ != 0 && (writes_done + 1) != FLAGS_num) {
             batch.Put(key, gen.Generate());
