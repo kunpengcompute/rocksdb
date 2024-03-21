@@ -20,12 +20,14 @@ do
 		mkdir -p $outdir
 		curdir="singledb${dbnum}_cores${cores}_threadN_cs${cs}"
 		dbdir=$basedir/$curdir
+		echo sh test_perf_single.sh fillseq $num $dbnum $key $value $cs 1 1 $dbdir
 		sh test_perf_single.sh fillseq $num $dbnum $key $value $cs 1 1 $dbdir > ${outdir}/fillseq_oplog
 		mv perfstatsresult ${outdir}/fillseq_perfstats
 		cp $dbdir/LOG ${outdir}/fillseq_LOG
+		echo sh test_perf_single.sh overwrite $num $dbnum $key $value $cs 1 1 $dbdir
 		sh test_perf_single.sh overwrite $num $dbnum $key $value $cs 1 1 $dbdir > ${outdir}/overwrite_oplog
-                mv perfstatsresult ${outdir}/overwrite_perfstats
-                cp $dbdir/LOG ${outdir}/overwrite_LOG
+		mv perfstatsresult ${outdir}/overwrite_perfstats
+		cp $dbdir/LOG ${outdir}/overwrite_LOG
 
 		for mod in "randwrite" "readrandom" "r7w3"
 		do
@@ -39,16 +41,25 @@ do
 				mode1="readrandom"
 			fi
 
+			sh getmemory.sh > memoryuse &
+			echo sh test_perf_single.sh ${mode1} $num $dbnum $key $value $cs $threads 1 $dbdir
 			sh test_perf_single.sh ${mode1} $num $dbnum $key $value $cs $threads 1 $dbdir > ${outdir}/${mod}_oplog
+			kill -9 `ps -ef |grep getmemory |grep -v grep |awk '{print $2}'`
 			mv perfstatsresult ${outdir}/${mod}_perfstats
-	                cp $dbdir/LOG ${outdir}/${mod}_LOG
+			mv memoryuse ${outdir}/${mod}_memoryuse
+			cp $dbdir/LOG ${outdir}/${mod}_LOG
 		done
 
-		echo ---------------------------------------------------------
+		# 删除SST 和 BLOB，防止盘满
+		rm $dbdir/*.blob -f
+		rm $dbdir/*.sst -f
+
+		echo -----------------------------------------------------------
 		echo perfresult:
 		for mod in "fillseq" "overwrite" "randwrite" "readrandom" "r7w3"
 		do
 			cat ${outdir}/${mod}_oplog |tail -1
 		done
+		echo -----------------------------------------------------------
 	done
 done

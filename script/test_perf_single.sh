@@ -42,7 +42,7 @@ fi
 num_warmup=0
 if [ "$benchmarks" == "overwrite2" ]
 then
-        benchmarks="overwrite"
+	benchmarks="overwrite"
 	num_warmup=2
 fi
 
@@ -53,7 +53,7 @@ fi
 
 if [ "$benchmarks" == "readrandomwriterandom" ]
 then
-        num_warmup=2
+	num_warmup=2
 fi
 
 cachetype=0 # 0:blockcache, 1:kvcache
@@ -72,7 +72,6 @@ commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks[-W${num_w
 --key_size=$keysize
 --value_size=$valuesize
 --threads=$threads
---cache_size=${cache_size}
  $cachepara
 "
 
@@ -94,10 +93,9 @@ cfgfilebak="../config_file/tmp"
 cp $cfgfile $cfgfilebak
 
 cfgpara="
---flagfile=$cfgfile
+--flagfile=$cfgfilebak
 --flagfile=$cfgfile2
 "
-
 
 #-------------------------根据核数设置参数-----------------------------------#
 oldjobs=`sed -n 's/^--max_background_jobs=\(.*\)$/\1/p' $cfgfilebak`
@@ -105,10 +103,10 @@ oldflushes=`sed -n 's/^--max_background_flushes=\(.*\)$/\1/p' $cfgfilebak`
 oldcomp=`sed -n 's/^--max_background_compactions=\(.*\)$/\1/p' $cfgfilebak`
 oldnum=`sed -n 's/^--max_write_buffer_number=\(.*\)$/\1/p' $cfgfilebak`
 
-((newjobs=core*4))
-((newflushes=core*4))
-((newcomp=core*4))
-((newnum=core*4))
+((newjobs=cores*4))
+((newflushes=cores*2))
+((newcomp=cores*1))
+((newnum=cores*2))
 
 sed -i 's/\(max_background_jobs=\).*/\1'${newjobs}'/g' $cfgfilebak
 sed -i 's/\(max_background_flushes=\).*/\1'${newflushes}'/g' $cfgfilebak
@@ -118,20 +116,18 @@ sed -i 's/\(max_write_buffer_number=\).*/\1'${newnum}'/g' $cfgfilebak
 perflevel=5
 perfpara="--perf_level=$perflevel"
 
-if [ $perfflag -eq 0 ]
+if [ $perfflag -eq 1 ]
 then
-	perfpara="--perf_level=$perflevel"
-else
 	perfpara=""
 fi
 
-if      [[ "$benchmarks" == "readseq" ]] || 
+if	[[ "$benchmarks" == "readseq" ]] ||
 	[[ "$benchmarks" == "readrandom" ]] ||
-       	[[ "$benchmarks" == "readtocache" ]] ||
-        [[ "$benchmarks" == "readtorowcache" ]] ||
-       	[[ "$benchmarks" == "readrandomwriterandom" ]] ||
-        [[ "$benchmarks" == "overwrite" ]] ||
-       	[[ "$benchmarks" == "multireadrandom" ]]
+	[[ "$benchmarks" == "readtocache" ]] ||
+	[[ "$benchmarks" == "readtorowcache" ]] ||
+	[[ "$benchmarks" == "readrandomwriterandom" ]] ||
+	[[ "$benchmarks" == "overwrite" ]] ||
+	[[ "$benchmarks" == "multireadrandom" ]]
 then
 	ssdcmd="../build/db_bench $commonpara $rwpara -use_existing_db=1 $perfpara $cfgpara"
 else
@@ -145,6 +141,9 @@ fi
 
 sudo sh drop_cache.sh
 sleep 1
-((cores=32/dbnum-1))
-taskset -c 0-$cores $ssdcmd > perfstatsresult
+((coreidx=cores-1))
+echo taskset -c 0-$coreidx $ssdcmd
+taskset -c 0-$coreidx $ssdcmd > perfstatsresult
 sh calculate_result.sh $perfflag
+
+rm -f $cfgfilebak
