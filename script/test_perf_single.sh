@@ -58,6 +58,7 @@ fi
 
 cachetype=0 # 0:blockcache, 1:kvcache
 ((cache_size=cachesize*1024*1024))
+((cores=32/dbnum))
 if [ $cachetype -eq 0 ]
 then
 	cachepara="--cache_size=${cache_size}"
@@ -88,10 +89,31 @@ cfgfile="../config_file/base_file"
 #cfgfile="../config_file/final_file"
 cfgfile2="../config_file/file_sys"
 
+cfgfilebak="../config_file/tmp"
+
+cp $cfgfile $cfgfilebak
+
 cfgpara="
 --flagfile=$cfgfile
 --flagfile=$cfgfile2
 "
+
+
+#-------------------------根据核数设置参数-----------------------------------#
+oldjobs=`sed -n 's/^--max_background_jobs=\(.*\)$/\1/p' $cfgfilebak`
+oldflushes=`sed -n 's/^--max_background_flushes=\(.*\)$/\1/p' $cfgfilebak`
+oldcomp=`sed -n 's/^--max_background_compactions=\(.*\)$/\1/p' $cfgfilebak`
+oldnum=`sed -n 's/^--max_write_buffer_number=\(.*\)$/\1/p' $cfgfilebak`
+
+((newjobs=core*4))
+((newflushes=core*4))
+((newcomp=core*4))
+((newnum=core*4))
+
+sed -i 's/\(max_background_jobs=\).*/\1'${newjobs}'/g' $cfgfilebak
+sed -i 's/\(max_background_flushes=\).*/\1'${newflushes}'/g' $cfgfilebak
+sed -i 's/\(max_background_compactions=\).*/\1'${newcomp}'/g' $cfgfilebak
+sed -i 's/\(max_write_buffer_number=\).*/\1'${newnum}'/g' $cfgfilebak
 
 perflevel=5
 perfpara="--perf_level=$perflevel"
