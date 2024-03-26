@@ -13,6 +13,9 @@ then
 	elif [ "$mode" == "Debug" ]
 	then
 		type=""
+	elif [ "$mode" == "UTONLY" ]
+	then
+                type="-DWITH_ALL_TESTS=OFF"
 	else
 		echo mode only Release or RelWithDebInfo ro Debug !!!!!
 		exit 1
@@ -27,5 +30,12 @@ mkdir -p build
 cd build
 echo $cmd
 $cmd
+if [ "$mode" == "UTONLY" ]
+then
+	make check -j64	
+	ret=$?
+	cd -
+	exit $ret
+fi
 make -j64
 cd -
