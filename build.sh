@@ -24,7 +24,6 @@ then
 else
 	cmd="cmake $@ .."
 fi
-cmd=$cmd" -DDISABLE_COMPACT_CACHE=true"
 rm build -rf
 mkdir -p build
 cd build

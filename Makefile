@@ -610,11 +610,12 @@ CXXFLAGS += -Wno-invalid-offsetof
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
-ifndef DISABLE_COMPACT_CACHE
+DISABLE_COMPACT_CACHE?=true
+ifeq ($(DISABLE_COMPACT_CACHE),true)
+  CXXFLAGS += -DDISABLE_COMPACT_CACHE
+else
   LDFLAGS += -ksal
   LIB_SOURCES += cache/compact_cache_interface.cc
-else
-  CXXFLAGS += -DDISABLE_COMPACT_CACHE
 endif
 
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
