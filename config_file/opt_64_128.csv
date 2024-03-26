@@ -1,0 +1,7 @@
+casename,cpu_mask,benchmarks,db,use_existing_db,num,key_size,value_size,flags1,flags2,cache_size,threads,readwritepercent,warmup,duration,iops,lat(us),rlat(us),P50_rlat,P99_rlat,wlat(us),P50_wlat,P99_wlat,report_interval_seconds,checksum_type,level0_file_num_compaction_trigger,max_background_jobs,max_background_flushes,max_background_compactions,max_write_buffer_number
+prewrite,4,fillseq,/mnt/rocksdb/db_64_128,0,41943040,64,128,./config_file/optimize_var_jobs_file,./config_file/file_sys,4294967296,1,0,0,0,,,,,,,,,10,1,16,4,2,1,2
+overwrite,4,overwrite,/mnt/rocksdb/db_64_128,1,41943040,64,128,./config_file/optimize_var_jobs_file,./config_file/file_sys,4294967296,1,0,0,0,,,,,,,,,10,1,16,4,2,1,2
+writerand,4,overwrite,/mnt/rocksdb/db_64_128,1,41943040,64,128,./config_file/optimize_var_jobs_file,./config_file/file_sys,4294967296,16,0,2,600,,,,,,,,,10,1,16,4,2,1,2
+readrand,4,readrandom,/mnt/rocksdb/db_64_128,1,41943040,64,128,./config_file/optimize_var_jobs_file,./config_file/file_sys,4294967296,16,0,2,600,,,,,,,,,10,1,16,4,2,1,2
+read7write3,4,readrandomwriterandom,/mnt/rocksdb/db_64_128,1,41943040,64,128,./config_file/optimize_var_jobs_file,./config_file/file_sys,4294967296,16,70,2,600,,,,,,,,,10,1,16,4,2,1,2
+
