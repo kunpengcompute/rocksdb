@@ -6,7 +6,7 @@
 --block_size=4096
 --pin_l0_filter_and_index_blocks_in_cache=true
 --cache_index_and_filter_blocks=true
---level0_file_num_compaction_trigger=2
+--level0_file_num_compaction_trigger=16
 --level0_slowdown_writes_trigger=36
 --level0_stop_writes_trigger=48
 --compaction_readahead_size=524288
@@ -14,7 +14,7 @@
 --target_file_size_base=134217728
 --max_bytes_for_level_base=536870912
 
---enable_pipelined_write=true
+--enable_pipelined_write=false
 --max_background_jobs=16
 --max_background_flushes=8
 --max_background_compactions=4
@@ -22,5 +22,5 @@
 --max_write_buffer_number=8
 --soft_pending_compaction_bytes_limit=137438953472
 --hard_pending_compaction_bytes_limit=274877906944
---delayed_write_rate=33554432
+--delayed_write_rate=134217728
 
