@@ -24,10 +24,12 @@ do
 		sh test_perf_single.sh fillseq $num $dbnum $key $value $cs 1 1 $dbdir > ${outdir}/fillseq_oplog
 		mv perfstatsresult ${outdir}/fillseq_perfstats
 		cp $dbdir/LOG ${outdir}/fillseq_LOG
+		mv report.csv ${outdir}/fillseq_report.csv
 		echo sh test_perf_single.sh overwrite $num $dbnum $key $value $cs 1 1 $dbdir
 		sh test_perf_single.sh overwrite $num $dbnum $key $value $cs 1 1 $dbdir > ${outdir}/overwrite_oplog
 		mv perfstatsresult ${outdir}/overwrite_perfstats
 		cp $dbdir/LOG ${outdir}/overwrite_LOG
+		mv report.csv ${outdir}/overwrite_report.csv
 
 		for mod in "randwrite" "readrandom" "r7w3"
 		do
@@ -48,6 +50,7 @@ do
 			mv perfstatsresult ${outdir}/${mod}_perfstats
 			mv memoryuse ${outdir}/${mod}_memoryuse
 			cp $dbdir/LOG ${outdir}/${mod}_LOG
+			mv report.csv ${outdir}/${mod}_report.csv
 		done
 
 		# 删除SST 和 BLOB，防止盘满
