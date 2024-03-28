@@ -130,7 +130,7 @@ if	[[ "$benchmarks" == "readseq" ]] ||
 	[[ "$benchmarks" == "overwrite" ]] ||
 	[[ "$benchmarks" == "multireadrandom" ]]
 then
-	ssdcmd="../build/db_bench $commonpara $rwpara -use_existing_db=1 $perfpara $cfgpara"
+	ssdcmd="../build/db_bench $commonpara $rwpara --use_existing_db=1 $perfpara $cfgpara"
 else
 	ssdcmd="../build/db_bench $commonpara $rwpara $perfpara $cfgpara"
 fi

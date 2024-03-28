@@ -232,6 +232,39 @@ extern std::shared_ptr<Cache> NewLRUCache(
 
 extern std::shared_ptr<Cache> NewLRUCache(const LRUCacheOptions& cache_opts);
 
+//Compact_cache
+struct CompactCacheOptions : public ShardedCacheOptions {
+
+  bool use_adaptive_mutex = kDefaultToAdaptiveMutex;
+
+  CompactCacheOptions() {}
+  CompactCacheOptions(size_t _capacity, int _num_shard_bits,
+                  bool _strict_capacity_limit, 
+                  std::shared_ptr<MemoryAllocator> _memory_allocator = nullptr,
+                  CacheMetadataChargePolicy _metadata_charge_policy =
+                      kDefaultCacheMetadataChargePolicy)
+      : ShardedCacheOptions(_capacity, _num_shard_bits, _strict_capacity_limit,
+                            std::move(_memory_allocator),
+                            _metadata_charge_policy) {}
+};
+
+// Create a new cache with a fixed size capacity. The cache is sharded
+// to 2^num_shard_bits shards, by hash of the key. The total capacity
+// is divided and evenly assigned to each shard. If strict_capacity_limit
+// is set, insert to the cache will fail when cache is full. User can also
+// set percentage of the cache reserves for high priority entries via
+// high_pri_pool_pct.
+// num_shard_bits = -1 means it is automatically determined: every shard
+// will be at least 512KB and number of shard bits will not exceed 6.
+extern std::shared_ptr<Cache> NewCompactCache(
+    size_t capacity, int num_shard_bits = -1,
+    bool strict_capacity_limit = false, 
+    std::shared_ptr<MemoryAllocator> memory_allocator = nullptr,
+    CacheMetadataChargePolicy metadata_charge_policy =
+        kDefaultCacheMetadataChargePolicy);
+
+extern std::shared_ptr<Cache> NewCompactCache(const CompactCacheOptions& cache_opts);
+
 // EXPERIMENTAL
 // Options structure for configuring a SecondaryCache instance based on
 // LRUCache. The LRUCacheOptions.secondary_cache is not used and

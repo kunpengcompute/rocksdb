@@ -578,6 +578,8 @@ DEFINE_double(cache_low_pri_pool_ratio, 0.0,
 
 DEFINE_string(cache_type, "lru_cache", "Type of block cache.");
 
+DEFINE_string(row_cache_type, "lru_cache", "Type of row cache.");
+
 DEFINE_bool(use_compressed_secondary_cache, false,
             "Use the CompressedSecondaryCache as the secondary cache.");
 
@@ -3097,7 +3099,15 @@ class Benchmark {
       }
 
       return NewLRUCache(opts);
-    } else {
+#ifndef DISABLE_COMPACT_CACHE
+    } else if (FLAGS_cache_type == "compact_cache") {
+        CompactCacheOptions opts(
+          static_cast<size_t>(capacity), FLAGS_cache_numshardbits,
+          false /*strict_capacity_limit*/,
+          GetCacheAllocator(), kDefaultCacheMetadataChargePolicy);
+          return NewCompactCache(opts);
+#endif
+    }else {
       fprintf(stderr, "Cache type not supported.");
       exit(1);
     }
@@ -3258,6 +3268,7 @@ class Benchmark {
     }
 
     int bytes_to_fill = std::min(key_size_ - static_cast<int>(pos - start), 8);
+#ifdef DISABLE_COMPACT_CACHE
     if (port::kLittleEndian) {
       for (int i = 0; i < bytes_to_fill; ++i) {
         pos[i] = (v >> ((bytes_to_fill - i - 1) << 3)) & 0xFF;
@@ -3269,6 +3280,16 @@ class Benchmark {
     if (key_size_ > pos - start) {
       memset(pos, '0', key_size_ - (pos - start));
     }
+#else
+    memset(pos, '0', key_size_);
+    if (port::kLittleEndian) {
+      for(int i = 0; i < bytes_to_fill; ++i) {
+          pos[key_size_ - i - 1] = v >> (8 * i);
+      }
+    } else {
+      memcpy(pos + key_size_ - bytes_to_fill, static_cast<void*>(&v), bytes_to_fill);
+    }
+#endif
   }
 
   void GenerateKeyFromIntForSeek(uint64_t v, int64_t num_keys, Slice* key) {
@@ -4703,15 +4724,27 @@ class Benchmark {
       }
     }
 
-    if (options.row_cache == nullptr) {
-      if (FLAGS_row_cache_size) {
-        if (FLAGS_cache_numshardbits >= 1) {
-          options.row_cache =
-              NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+    if (options.row_cache == nullptr && FLAGS_row_cache_size) {
+        if (FLAGS_row_cache_type == "lru_cache") {
+            if (FLAGS_cache_numshardbits >= 1) {
+                options.row_cache =
+                    NewLRUCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+            } else {
+                options.row_cache = NewLRUCache(FLAGS_row_cache_size);
+            }
+#ifndef DISABLE_COMPACT_CACHE
+        } else if (FLAGS_row_cache_type == "compact_cache") {
+            if (FLAGS_cache_numshardbits >= 1) {
+                options.row_cache =
+                    NewCompactCache(FLAGS_row_cache_size, FLAGS_cache_numshardbits);
+            } else {
+                options.row_cache = NewCompactCache(FLAGS_row_cache_size);
+            }
+#endif
         } else {
-          options.row_cache = NewLRUCache(FLAGS_row_cache_size);
-        }
-      }
+	    fprintf(stderr, "Cache type not supported.");
+	    exit(1);
+	}
     }
 
     if (options.env == Env::Default()) {
@@ -7307,7 +7340,8 @@ class Benchmark {
     // the number of iterations is the larger of read_ or write_
     int batch_size = 0;
     WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
-    FLAGS_write_batch_protection_bytes_per_key, user_timestamp_size_);
+                     FLAGS_write_batch_protection_bytes_per_key,
+                     user_timestamp_size_);
 
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
@@ -7343,7 +7377,8 @@ class Benchmark {
 
         if (entries_per_batch_ > 1) {
           // 凑batch
-          if ((batch_size + 1) % entries_per_batch_ != 0 && (writes_done + 1) != FLAGS_num) {
+          if ((batch_size + 1) % entries_per_batch_ != 0 &&
+              (writes_done + 1) != FLAGS_num) {
             batch.Put(key, gen.Generate());
             batch_size++;
           } else {

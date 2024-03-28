@@ -371,6 +371,45 @@ Status TableCache::GetRangeTombstoneIterator(
 }
 
 #ifndef ROCKSDB_LITE
+void TableCache::CreateRowCacheKey(const ReadOptions& options,
+                                          const Slice& user_key,
+                                         const FileDescriptor& fd,
+                                         const Slice& internal_key,
+                                         GetContext* get_context,
+                                         IterKey& row_cache_key) {
+
+  row_cache_key.TrimAppend(row_cache_key.Size(), user_key.data(), user_key.size());
+
+  uint64_t fd_number = fd.GetNumber();
+  // We use the user key as cache key instead of the internal key,
+  // otherwise the whole cache would be invalidated every time the
+  // sequence key increases. However, to support caching snapshot
+  // reads, we append the sequence number (incremented by 1 to
+  // distinguish from 0) only in this case.
+  // If the snapshot is larger than the largest seqno in the file,
+  // all data should be exposed to the snapshot, so we treat it
+  // the same as there is no snapshot. The exception is that if
+  // a seq-checking callback is registered, some internal keys
+  // may still be filtered out.
+  uint64_t seq_no = 0;
+  // Maybe we can include the whole file ifsnapshot == fd.largest_seqno.
+  if (options.snapshot != nullptr &&
+      (get_context->has_callback() ||
+       static_cast_with_check<const SnapshotImpl>(options.snapshot)
+               ->GetSequenceNumber() <= fd.largest_seqno)) {
+    // We should consider to use options.snapshot->GetSequenceNumber()
+    // instead of GetInternalKeySeqno(k), which will make the code
+    // easier to understand.
+    seq_no = 1 + GetInternalKeySeqno(internal_key);
+  }
+
+  // Compute row cache key.
+  row_cache_key.TrimAppend(row_cache_key.Size(), row_cache_id_.data(),
+                           row_cache_id_.size());
+  AppendVarint64(&row_cache_key, fd_number);
+  AppendVarint64(&row_cache_key, seq_no);
+}
+
 void TableCache::CreateRowCacheKeyPrefix(const ReadOptions& options,
                                          const FileDescriptor& fd,
                                          const Slice& internal_key,
@@ -409,8 +448,9 @@ void TableCache::CreateRowCacheKeyPrefix(const ReadOptions& options,
 bool TableCache::GetFromRowCache(const Slice& user_key, IterKey& row_cache_key,
                                  size_t prefix_size, GetContext* get_context) {
   bool found = false;
-
+#ifdef DISABLE_COMPACT_CACHE
   row_cache_key.TrimAppend(prefix_size, user_key.data(), user_key.size());
+#endif
   if (auto row_handle =
           ioptions_.row_cache->Lookup(row_cache_key.GetUserKey())) {
     // Cleanable routine to release the cache entry
@@ -460,7 +500,11 @@ Status TableCache::Get(
   // sequence numbers, we cannot use it if we need to fetch the sequence.
   if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
     auto user_key = ExtractUserKey(k);
+#ifdef DISABLE_COMPACT_CACHE
     CreateRowCacheKeyPrefix(options, fd, k, get_context, row_cache_key);
+#else
+    CreateRowCacheKey(options, user_key, fd, k, get_context, row_cache_key);
+#endif
     done = GetFromRowCache(user_key, row_cache_key, row_cache_key.Size(),
                            get_context);
     if (!done) {

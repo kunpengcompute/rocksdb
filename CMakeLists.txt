@@ -64,6 +64,8 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
+option(DISABLE_KSAL "build without Ksal" OFF)
+option(DISABLE_COMPACT_CACHE "build without CompactCache" ON)
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_LIBURING "build with liburing" ON)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
@@ -71,6 +73,17 @@ option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
+
+if(NOT DISABLE_KSAL)
+	EXECUTE_PROCESS(COMMAND sh ../cpu_detect.sh
+        	RESULT_VARIABLE ARCH_KUNPENG
+	)
+	if(ARCH_KUNPENG)
+        	add_compile_definitions(ARCH_KUNPENG)
+	        list(APPEND THIRDPARTY_LIBS ksal)
+	endif()
+endif()
+
 if (WITH_WINDOWS_UTF8_FILENAMES)
   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
 endif()
@@ -656,7 +669,14 @@ set(SOURCES
         cache/lru_cache.cc
         cache/secondary_cache.cc
         cache/sharded_cache.cc
-        db/arena_wrapped_db_iter.cc
+)
+if(NOT DISABLE_COMPACT_CACHE)
+list(APPEND SOURCES
+	cache/compact_cache_interface.cc
+)
+endif()
+list(APPEND SOURCES
+	db/arena_wrapped_db_iter.cc
         db/blob/blob_contents.cc
         db/blob/blob_fetcher.cc
         db/blob/blob_file_addition.cc
@@ -1118,6 +1138,12 @@ string(REGEX REPLACE "[^0-9: /-]+" "" GIT_DATE "${GIT_DATE}")
 
 set(BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/build_version.cc)
 configure_file(util/build_version.cc.in ${BUILD_VERSION_CC} @ONLY)
+
+if(NOT DISABLE_COMPACT_CACHE)
+  list(APPEND THIRDPARTY_LIBS ksal)
+else()
+  add_compile_definitions(DISABLE_COMPACT_CACHE)
+endif()
 
 add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES} ${BUILD_VERSION_CC})
 target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE

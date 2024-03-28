@@ -610,6 +610,14 @@ CXXFLAGS += -Wno-invalid-offsetof
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
+DISABLE_COMPACT_CACHE?=true
+ifeq ($(DISABLE_COMPACT_CACHE),true)
+  CXXFLAGS += -DDISABLE_COMPACT_CACHE
+else
+  LDFLAGS += -ksal
+  LIB_SOURCES += cache/compact_cache_interface.cc
+endif
+
 LIB_OBJECTS = $(patsubst %.cc, $(OBJ_DIR)/%.o, $(LIB_SOURCES))
 LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(ROCKSDB_PLUGIN_SOURCES))
 ifeq ($(HAVE_POWER8),1)
