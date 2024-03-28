@@ -250,8 +250,27 @@ static inline uint32_t LE_LOAD32(const uint8_t* p) {
 }
 #endif  // !__SSE4_2__
 
+#ifdef ARCH_KUNPENG
+#if ((defined(__SSE4_2__) && (defined(__LP64__) || defined(_WIN64))) || defined(__ARM_FEATURE_CRC32))
+static inline uint64_t LE_LOAD64(const uint8_t* p) {
+  return DecodeFixed64(reinterpret_cast<const char*>(p));
+}
+#endif
+#else
+#if defined(__SSE4_2__) && (defined(__LP64__) || defined(_WIN64))
+static inline uint64_t LE_LOAD64(const uint8_t* p) {
+  return DecodeFixed64(reinterpret_cast<const char*>(p));
+}
+#endif
+#endif
+
+
 static inline void DefaultCRC32(uint64_t* l, uint8_t const** p) {
 #ifndef __SSE4_2__
+#ifdef ARCH_KUNPENG
+  *l = __crc32cd(*l, LE_LOAD64(*p));
+  *p += 8;
+#else
   uint32_t c = static_cast<uint32_t>(*l ^ LE_LOAD32(*p));
   *p += 4;
   *l = table3_[c & 0xff] ^ table2_[(c >> 8) & 0xff] ^
@@ -261,8 +280,9 @@ static inline void DefaultCRC32(uint64_t* l, uint8_t const** p) {
   *p += 4;
   *l = table3_[c & 0xff] ^ table2_[(c >> 8) & 0xff] ^
        table1_[(c >> 16) & 0xff] ^ table0_[c >> 24];
+#endif
 #elif defined(__LP64__) || defined(_WIN64)
-  *l = _mm_crc32_u64(*l, DecodeFixed64(reinterpret_cast<const char*>(*p)));
+  *l = _mm_crc32_u64(*l, LE_LOAD64(*p));
   *p += 8;
 #else
   *l = _mm_crc32_u32(static_cast<unsigned int>(*l), LE_LOAD32(*p));
