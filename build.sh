@@ -32,10 +32,10 @@ echo $cmd
 $cmd
 if [ "$mode" == "UTONLY" ]
 then
-	make check -j64	
+	make check -j32	
 	ret=$?
 	cd -
 	exit $ret
 fi
-make -j64
+make -j32
 cd -
