@@ -72,6 +72,7 @@ commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks[-W${num_w
 --key_size=$keysize
 --value_size=$valuesize
 --threads=$threads
+--report_interval_seconds=1
  $cachepara
 "
 
