@@ -64,7 +64,8 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
-option(DISABLE_COMPACT_CACHE "build with CompactCache" ON)
+option(DISABLE_KSAL "build without Ksal" OFF)
+option(DISABLE_COMPACT_CACHE "build without CompactCache" ON)
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_LIBURING "build with liburing" ON)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
@@ -72,6 +73,17 @@ option(WITH_LZ4 "build with lz4" OFF)
 option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
+
+if(NOT DISABLE_KSAL)
+	EXECUTE_PROCESS(COMMAND sh ../cpu_detect.sh
+        	RESULT_VARIABLE ARCH_KUNPENG
+	)
+	if(ARCH_KUNPENG)
+        	add_compile_definitions(ARCH_KUNPENG)
+	        list(APPEND THIRDPARTY_LIBS ksal)
+	endif()
+endif()
+
 if (WITH_WINDOWS_UTF8_FILENAMES)
   add_definitions(-DROCKSDB_WINDOWS_UTF8_FILENAMES)
 endif()
