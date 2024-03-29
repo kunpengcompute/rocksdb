@@ -1172,6 +1172,8 @@ struct DBOptions {
   // Not supported in ROCKSDB_LITE mode!
   std::shared_ptr<Cache> row_cache = nullptr;
 
+  bool disable_l0_row_cache = false;
+
 #ifndef ROCKSDB_LITE
   // A filter object supplied to be invoked while processing write-ahead-logs
   // (WALs) during recovery. The filter provides a way to inspect log

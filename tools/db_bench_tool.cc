@@ -353,6 +353,13 @@ static bool ValidateUint32Range(const char* flagname, uint64_t value) {
 
 DEFINE_int32(key_size, 16, "size of each key");
 
+DEFINE_int32(hotspot_interval, 1, "interval of hotspots data."
+             "Valid only for readrandom and readrandomwriterandom"
+	     "e.g. 10 -> 10,20,30...(hotspots)");
+
+DEFINE_uint64(hotspot_heats, 0, "Percentage of read hotspot data in all data."
+             "Valid only for readrandom and readrandomwriterandom");
+
 DEFINE_int32(user_timestamp_size, 0,
              "number of bytes in a user-defined timestamp");
 
@@ -579,6 +586,8 @@ DEFINE_double(cache_low_pri_pool_ratio, 0.0,
 DEFINE_string(cache_type, "lru_cache", "Type of block cache.");
 
 DEFINE_string(row_cache_type, "lru_cache", "Type of row cache.");
+
+DEFINE_bool(disable_l0_row_cache, false, "disable l0 row cache");
 
 DEFINE_bool(use_compressed_secondary_cache, false,
             "Use the CompressedSecondaryCache as the secondary cache.");
@@ -4745,6 +4754,7 @@ class Benchmark {
 	    fprintf(stderr, "Cache type not supported.");
 	    exit(1);
 	}
+	options.disable_l0_row_cache = FLAGS_disable_l0_row_cache;
     }
 
     if (options.env == Env::Default()) {
@@ -6078,6 +6088,9 @@ class Benchmark {
       } else {
         key_rand = GetRandomKey(&thread->rand);
       }
+      if(thread->rand.Next() % 100 < FLAGS_hotspot_heats) {
+	      key_rand = key_rand / FLAGS_hotspot_interval * FLAGS_hotspot_interval;
+      }
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
       read++;
       std::string ts_ret;
@@ -7345,15 +7358,19 @@ class Benchmark {
 
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
-      GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
+      uint64_t randNum = thread->rand.Next() % FLAGS_num;
       if (get_weight == 0 && put_weight == 0) {
         // one batch completed, reinitialize for next batch
         get_weight = FLAGS_readwritepercent;
         put_weight = 100 - get_weight;
       }
       if (get_weight > 0) {
+	if(thread->rand.Next() % 100 < FLAGS_hotspot_heats) {
+                randNum = randNum / FLAGS_hotspot_interval * FLAGS_hotspot_interval;
+        }
+        GenerateKeyFromInt(randNum, FLAGS_num, &key);
         // do all the gets first
-        Slice ts;
+	Slice ts;
         if (user_timestamp_size_ > 0) {
           ts = mock_app_clock_->GetTimestampForRead(thread->rand,
                                                     ts_guard.get());
@@ -7371,7 +7388,8 @@ class Benchmark {
         reads_done++;
         thread->stats.FinishedOps(nullptr, db, 1, kRead);
       } else if (put_weight > 0) {
-        // then do all the corresponding number of puts
+        GenerateKeyFromInt(randNum, FLAGS_num, &key);
+	// then do all the corresponding number of puts
         // for all the gets we have done earlier
         Status s;
 
