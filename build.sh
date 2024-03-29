@@ -24,7 +24,7 @@ then
 else
 	cmd="cmake $@ .."
 fi
-cmd=$cmd" -DDISABLE_KSAL=ON"
+#cmd=$cmd" -DDISABLE_KSAL=ON"
 rm build -rf
 mkdir -p build
 cd build
