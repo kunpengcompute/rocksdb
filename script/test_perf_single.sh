@@ -83,14 +83,22 @@ else
 	rwpara=""
 fi
 
-cfgfile="../config_file/base_file"
-#cfgfile="../config_file/optimize_file"
-#cfgfile="../config_file/kvsep_file"
-#cfgfile="../config_file/final_file"
+usecfg=1 # 0:base 1:opt 2:kvsep 3:opt+kvsep
+if [ $usecfg -eq 0 ]
+then
+	cfgfile="../config_file/base_file"
+elif [ $usecfg -eq 1 ]
+then
+	cfgfile="../config_file/optimize_file"
+elif [ $usecfg -eq 2 ]
+then
+	cfgfile="../config_file/kvsep_file"
+else
+	cfgfile="../config_file/final_file"
+fi
+
 cfgfile2="../config_file/file_sys"
-
 cfgfilebak="../config_file/tmp"
-
 cp $cfgfile $cfgfilebak
 
 cfgpara="
@@ -98,21 +106,24 @@ cfgpara="
 --flagfile=$cfgfile2
 "
 
-#-------------------------根据核数设置参数-----------------------------------#
-oldjobs=`sed -n 's/^--max_background_jobs=\(.*\)$/\1/p' $cfgfilebak`
-oldflushes=`sed -n 's/^--max_background_flushes=\(.*\)$/\1/p' $cfgfilebak`
-oldcomp=`sed -n 's/^--max_background_compactions=\(.*\)$/\1/p' $cfgfilebak`
-oldnum=`sed -n 's/^--max_write_buffer_number=\(.*\)$/\1/p' $cfgfilebak`
-
-((newjobs=cores*4))
-((newflushes=cores*2))
-((newcomp=cores*1))
-((newnum=cores*2))
-
-sed -i 's/\(max_background_jobs=\).*/\1'${newjobs}'/g' $cfgfilebak
-sed -i 's/\(max_background_flushes=\).*/\1'${newflushes}'/g' $cfgfilebak
-sed -i 's/\(max_background_compactions=\).*/\1'${newcomp}'/g' $cfgfilebak
-sed -i 's/\(max_write_buffer_number=\).*/\1'${newnum}'/g' $cfgfilebak
+if [ $usecfg -ne 0 ]
+then
+	#-------------------------根据核数设置参数-----------------------------------#
+	oldjobs=`sed -n 's/^--max_background_jobs=\(.*\)$/\1/p' $cfgfilebak`
+	oldflushes=`sed -n 's/^--max_background_flushes=\(.*\)$/\1/p' $cfgfilebak`
+	oldcomp=`sed -n 's/^--max_background_compactions=\(.*\)$/\1/p' $cfgfilebak`
+	oldnum=`sed -n 's/^--max_write_buffer_number=\(.*\)$/\1/p' $cfgfilebak`
+	
+	((newjobs=cores*4))
+	((newflushes=cores*2))
+	((newcomp=cores*1))
+	((newnum=cores*2))
+	
+	sed -i 's/\(max_background_jobs=\).*/\1'${newjobs}'/g' $cfgfilebak
+	sed -i 's/\(max_background_flushes=\).*/\1'${newflushes}'/g' $cfgfilebak
+	sed -i 's/\(max_background_compactions=\).*/\1'${newcomp}'/g' $cfgfilebak
+	sed -i 's/\(max_write_buffer_number=\).*/\1'${newnum}'/g' $cfgfilebak
+fi
 
 perflevel=5
 perfpara="--perf_level=$perflevel"
