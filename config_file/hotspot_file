@@ -1,0 +1,3 @@
+--hotspot_interval=10
+--hotspot_heats=50
+--disable_l0_row_cache=true

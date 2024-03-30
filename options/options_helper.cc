@@ -155,6 +155,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.wal_recovery_mode = immutable_db_options.wal_recovery_mode;
   options.allow_2pc = immutable_db_options.allow_2pc;
   options.row_cache = immutable_db_options.row_cache;
+  options.disable_l0_row_cache = immutable_db_options.disable_l0_row_cache;
 #ifndef ROCKSDB_LITE
   options.wal_filter = immutable_db_options.wal_filter;
 #endif  // ROCKSDB_LITE

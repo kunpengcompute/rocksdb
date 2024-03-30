@@ -63,7 +63,9 @@ if [ $cachetype -eq 0 ]
 then
 	cachepara="--cache_size=${cache_size}"
 else
-	cachepara="--cache_size=8338608 --row_cache_size=${cache_size} --row_cache_type=compact_cache"
+	#index/filter不计入blockcache，减少缓存进行平衡
+	((cache_size=cachesize*0.9))
+	cachepara="--cache_size=0 --row_cache_size=${cache_size}"
 fi
 
 commonpara="--db=${dbdir} --wal_dir=${dbdir} --benchmarks="$benchmarks[-W${num_warmup}],stats"
@@ -98,13 +100,17 @@ else
 fi
 
 cfgfile2="../config_file/file_sys"
-cfgfilebak="../config_file/tmp"
+cfgfile3="../config_file/hotspot_file"
+cfgfilebak="${cfgfile}tmp"
 cp $cfgfile $cfgfilebak
 
 cfgpara="
 --flagfile=$cfgfilebak
 --flagfile=$cfgfile2
 "
+
+#open in hotspot read
+#cfgpara="${cfgpara} --flagfile=$cfgfile3"
 
 if [ $usecfg -ne 0 ]
 then
@@ -123,6 +129,11 @@ then
 	sed -i 's/\(max_background_flushes=\).*/\1'${newflushes}'/g' $cfgfilebak
 	sed -i 's/\(max_background_compactions=\).*/\1'${newcomp}'/g' $cfgfilebak
 	sed -i 's/\(max_write_buffer_number=\).*/\1'${newnum}'/g' $cfgfilebak
+	if [ $cachetype -eq 1 ]
+	then
+		sed -i 's/\(pin_l0_filter_and_index_blocks_in_cache=\).*/\1'false'/g' $cfgfilebak
+		sed -i 's/\(cache_index_and_filter_blocks=\).*/\1'false'/g' $cfgfilebak
+	fi
 fi
 
 perflevel=5

@@ -498,7 +498,7 @@ Status TableCache::Get(
 
   // Check row cache if enabled. Since row cache does not currently store
   // sequence numbers, we cannot use it if we need to fetch the sequence.
-  if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
+  if (ioptions_.row_cache && !get_context->NeedToReadSequence() && (!ioptions_.disable_l0_row_cache || level)) {
     auto user_key = ExtractUserKey(k);
 #ifdef DISABLE_COMPACT_CACHE
     CreateRowCacheKeyPrefix(options, fd, k, get_context, row_cache_key);
@@ -560,7 +560,7 @@ Status TableCache::Get(
 
 #ifndef ROCKSDB_LITE
   // Put the replay log in row cache only if something was found.
-  if (!done && s.ok() && row_cache_entry && !row_cache_entry->empty()) {
+  if (!done && s.ok() && row_cache_entry && !row_cache_entry->empty() && (!ioptions_.disable_l0_row_cache || level)) {
     size_t charge = row_cache_entry->capacity() + sizeof(std::string);
     void* row_ptr = new std::string(std::move(*row_cache_entry));
     // If row cache is full, it's OK to continue.
