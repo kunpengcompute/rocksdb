@@ -20,7 +20,7 @@
 namespace ROCKSDB_NAMESPACE {
 namespace compact_cache {
 
-struct CompactHandle : public CompactHandleInternal{
+struct CompactHandle : public KsalCompactHandle{
     uint32_t GetHash() const {
         return *(uint32_t *)extras;
     }
@@ -83,7 +83,7 @@ public:  // Function definitions expected as parameter to ShardedCache
     inline void EraseUnRefEntries();
 
 private:
-    CompactCacheInternal cacheInternal;
+    KsalCompactCache cacheInternal;
 };
 
 class CompactCache

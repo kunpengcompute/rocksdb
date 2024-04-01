@@ -371,7 +371,7 @@ Status TableCache::GetRangeTombstoneIterator(
 }
 
 #ifndef ROCKSDB_LITE
-void TableCache::CreateRowCacheKey(const ReadOptions& options,
+uint64_t TableCache::CreateRowCacheKey(const ReadOptions& options,
                                           const Slice& user_key,
                                          const FileDescriptor& fd,
                                          const Slice& internal_key,
@@ -391,7 +391,7 @@ void TableCache::CreateRowCacheKey(const ReadOptions& options,
   // the same as there is no snapshot. The exception is that if
   // a seq-checking callback is registered, some internal keys
   // may still be filtered out.
-  uint64_t seq_no = 0;
+  uint64_t cache_entry_seq_no = 0;
   // Maybe we can include the whole file ifsnapshot == fd.largest_seqno.
   if (options.snapshot != nullptr &&
       (get_context->has_callback() ||
@@ -400,14 +400,15 @@ void TableCache::CreateRowCacheKey(const ReadOptions& options,
     // We should consider to use options.snapshot->GetSequenceNumber()
     // instead of GetInternalKeySeqno(k), which will make the code
     // easier to understand.
-    seq_no = 1 + GetInternalKeySeqno(internal_key);
+    cache_entry_seq_no = 1 + GetInternalKeySeqno(internal_key);
   }
 
   // Compute row cache key.
   row_cache_key.TrimAppend(row_cache_key.Size(), row_cache_id_.data(),
                            row_cache_id_.size());
   AppendVarint64(&row_cache_key, fd_number);
-  AppendVarint64(&row_cache_key, seq_no);
+  AppendVarint64(&row_cache_key, cache_entry_seq_no);
+  return cache_entry_seq_no == 0 ? 0 : cache_entry_seq_no - 1;
 }
 
 uint64_t TableCache::CreateRowCacheKeyPrefix(const ReadOptions& options,
@@ -505,7 +506,7 @@ Status TableCache::Get(
 #ifdef DISABLE_COMPACT_CACHE
     uint64_t cache_entry_seq_no = CreateRowCacheKeyPrefix(options, fd, k, get_context, row_cache_key);
 #else
-    CreateRowCacheKey(options, user_key, fd, k, get_context, row_cache_key);
+    uint64_t cache_entry_seq_no = CreateRowCacheKey(options, user_key, fd, k, get_context, row_cache_key);
 #endif
     done = GetFromRowCache(user_key, row_cache_key, row_cache_key.Size(),
                            get_context, cache_entry_seq_no);

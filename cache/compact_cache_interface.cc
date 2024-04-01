@@ -34,14 +34,14 @@ void CompactCacheShard::SetStrictCapacityLimit(bool /*strict_capacity_limit*/) {
 Status CompactCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
                     size_t charge, Cache::DeleterFn deleter,
                     CompactHandle** handle, Cache::Priority /*priority*/) {
-    bool overwrite = cacheInternal.Insert(std::string(key.data(),key.size()), value, charge, (void *)deleter, (CompactHandleInternal **)handle, (int8_t *)&hash, sizeof(uint32_t));
+    bool overwrite = cacheInternal.Insert(std::string(key.data(),key.size()), value, charge, (void *)deleter, (KsalCompactHandle **)handle, (int8_t *)&hash, sizeof(uint32_t));
     return overwrite?Status::OkOverwritten():Status::OK();
 }
 
 Status CompactCacheShard::Insert(const Slice& key, uint32_t hash, void* value,
                     const Cache::CacheItemHelper* helper, size_t charge,
                     CompactHandle** handle, Cache::Priority /*priority*/) {
-    bool overwrite = cacheInternal.Insert(std::string(key.data(),key.size()), value, charge,  (void *)helper->del_cb, (CompactHandleInternal **)handle, (int8_t *)&hash, sizeof(uint32_t));
+    bool overwrite = cacheInternal.Insert(std::string(key.data(),key.size()), value, charge,  (void *)helper->del_cb, (KsalCompactHandle **)handle, (int8_t *)&hash, sizeof(uint32_t));
     return overwrite?Status::OkOverwritten():Status::OK();
 }
 
@@ -115,7 +115,7 @@ CompactCache::CompactCache(size_t capacity, int num_shard_bits, bool strict_capa
     new (cs) CompactCacheShard(
         per_shard, metadata_charge_policy);
   });
-  CompactHandleInternal::InternalDeleter=RocksdbDeleter;
+  KsalCompactHandle::InternalDeleter=RocksdbDeleter;
 }
 
 void* CompactCache::Value(Handle* handle) {
