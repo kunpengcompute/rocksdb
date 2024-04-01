@@ -148,6 +148,8 @@ class GetContext {
 
   bool NeedTimestamp() { return timestamp_ != nullptr; }
 
+  inline size_t TimestampSize() { return ucmp_->timestamp_size(); }
+
   void SetTimestampFromRangeTombstone(const Slice& timestamp) {
     assert(timestamp_);
     timestamp_->assign(timestamp.data(), timestamp.size());
@@ -185,6 +187,7 @@ class GetContext {
   void Merge(const Slice* value);
   void MergeWithEntity(Slice entity);
   bool GetBlobValue(const Slice& blob_index, PinnableSlice* blob_value);
+  void appendToReplayLog(ValueType type, Slice value, Slice ts);
 
   const Comparator* ucmp_;
   const MergeOperator* merge_operator_;
@@ -226,6 +229,7 @@ class GetContext {
 // must have been set by calling GetContext::SetReplayLog().
 void replayGetContextLog(const Slice& replay_log, const Slice& user_key,
                          GetContext* get_context,
-                         Cleanable* value_pinner = nullptr);
+                         Cleanable* value_pinner = nullptr,
+			 SequenceNumber seq_no = kMaxSequenceNumber);
 
 }  // namespace ROCKSDB_NAMESPACE
