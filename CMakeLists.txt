@@ -80,7 +80,7 @@ if(NOT DISABLE_KSAL)
 	)
 	if(ARCH_KUNPENG)
         	add_compile_definitions(ARCH_KUNPENG)
-	        list(APPEND THIRDPARTY_LIBS ksal)
+	        list(APPEND THIRDPARTY_LIBS ksal ksal_libc)
 	endif()
 endif()
 
