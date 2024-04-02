@@ -245,7 +245,7 @@ static inline uint32_t LE_LOAD32(const uint8_t* p) {
   return DecodeFixed32(reinterpret_cast<const char*>(p));
 }
 
-#ifdef ARCH_KUNPENG
+#ifdef WITH_KP_OPT
 #if ((defined(HAVE_SSE42) && (defined(__LP64__) || defined(_WIN64))) || defined(__ARM_FEATURE_CRC32))
 static inline uint64_t LE_LOAD64(const uint8_t* p) {
   return DecodeFixed64(reinterpret_cast<const char*>(p));
@@ -260,7 +260,7 @@ static inline uint64_t LE_LOAD64(const uint8_t* p) {
 #endif
 
 static inline void Slow_CRC32(uint64_t* l, uint8_t const** p) {
-#ifdef ARCH_KUNPENG
+#ifdef WITH_KP_OPT
   *l = __crc32cd(*l, LE_LOAD64(*p));
   *p += 8;
 #else
@@ -293,7 +293,7 @@ static inline void Fast_CRC32(uint64_t* l, uint8_t const** p) {
 #endif
 }
 #endif
-#ifdef ARCH_KUNPENG
+#ifdef WITH_KP_OPT
 #define PREFL1_64B(ptr) __builtin_prefetch((ptr), 0, 0)
 #define PREFL2_64B(ptr) __builtin_prefetch((ptr), 0, 2)
 #define PREFL1L2_256B(l1ptr, l2ptr) do { \
@@ -351,7 +351,7 @@ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
       STEP1;
     }
   }
-#ifdef ARCH_KUNPENG
+#ifdef WITH_KP_OPT
     while ((e-p)>= 256) { 
         PREFL1L2_256B(p + 704, p + 1984); 
         CRC32CD_64B_X4(l, p);
