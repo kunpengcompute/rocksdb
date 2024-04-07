@@ -17,6 +17,7 @@ else
 	then
                 type="-DWITH_ALL_TESTS=OFF"
 	else
+		type="-DCMAKE_BUILD_TYPE=Release"
 		pos=1
 	fi
 	for((i=$pos;i<=$#;i++));
