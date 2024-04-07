@@ -1,9 +1,9 @@
 if [ $# -eq 0 ]
 then
 	cmd="cmake -DCMAKE_BUILD_TYPE=Release .."
-elif [ $# -eq 1 ]
-then
+else
 	mode=$1
+	pos=2
 	if [ "$mode" == "Release" ]
 	then
 		type="-DCMAKE_BUILD_TYPE=Release"
@@ -17,14 +17,27 @@ then
 	then
                 type="-DWITH_ALL_TESTS=OFF"
 	else
-		echo mode only Release or RelWithDebInfo ro Debug !!!!!
-		exit 1
+		pos=1
 	fi
+	for((i=$pos;i<=$#;i++));
+	do
+		if [ ${!i} == "DISABLE_KSAL" ]
+		then
+			type="$type -DWITH_KSAL=OFF"
+		elif [ ${!i} == "DISABLE_KP_OPT" ]
+		then
+			type="$type -DWITH_KP_OPT=OFF"
+		else
+			echo Usage:
+			echo sh build.sh [mode] [options]
+			echo mode: Release, RelWithDebInfo, Debug or UTONLY
+			echo options: DISABLE_KSAL, DISABLE_KP_OPT
+			exit 1
+		fi
+	done
 	cmd="cmake $type .."
-else
-	cmd="cmake $@ .."
 fi
-#cmd=$cmd" -DWITH_KSAL=OFF -DWITH_KP_OPT=OFF"
+#cmd=$cmd" -DWITH_KSAL=OFF -DWITH_KP_OPT=ON"
 rm build -rf
 mkdir -p build
 cd build
