@@ -75,16 +75,16 @@ option(WITH_ZLIB "build with zlib" OFF)
 option(WITH_ZSTD "build with zstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
 
-if(WITH_KSAL)
-	EXECUTE_PROCESS(COMMAND sh ../cpu_detect.sh
-        	RESULT_VARIABLE ARCH_KUNPENG
-	)
-	if(ARCH_KUNPENG)
-	        list(APPEND THIRDPARTY_LIBS ksal ksal_libc)
+EXECUTE_PROCESS(COMMAND sh ../cpu_detect.sh
+	RESULT_VARIABLE ARCH_KUNPENG
+)
+if(ARCH_KUNPENG)
+	if(WITH_KSAL)
+		list(APPEND THIRDPARTY_LIBS ksal_libc)
 	endif()
-endif()
-if(WITH_KP_OPT)
-	add_compile_definitions(WITH_KP_OPT)
+	if(WITH_KP_OPT)
+        	add_compile_definitions(WITH_KP_OPT)
+	endif()
 endif()
 
 if (WITH_WINDOWS_UTF8_FILENAMES)
