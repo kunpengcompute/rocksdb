@@ -239,7 +239,6 @@ void* cacheline_aligned_alloc(size_t size) {
 void cacheline_aligned_free(void* memblock) { free(memblock); }
 
 static size_t GetPageSize() {
-  return 64U * 1024U;
 #if defined(OS_LINUX) || defined(_SC_PAGESIZE)
   long v = sysconf(_SC_PAGESIZE);
   if (v >= 1024) {
