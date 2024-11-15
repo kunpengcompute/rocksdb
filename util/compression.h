@@ -1351,6 +1351,11 @@ inline bool ZSTD_Compress(const CompressionInfo& info, const char* input,
   } else {
     level = info.options().level;
   }
+
+#ifdef KAE
+  outlen = ZSTD_compress(&(*output)[output_header_len], compressBound, input,
+                         length, level);
+#else 
 #if ZSTD_VERSION_NUMBER >= 500  // v0.5.0+
   ZSTD_CCtx* context = info.context().ZSTDPreallocCtx();
   assert(context != nullptr);
@@ -1371,6 +1376,7 @@ inline bool ZSTD_Compress(const CompressionInfo& info, const char* input,
   outlen = ZSTD_compress(&(*output)[output_header_len], compressBound, input,
                          length, level);
 #endif  // ZSTD_VERSION_NUMBER >= 500
+#endif	// KAE 
   if (outlen == 0) {
     return false;
   }
@@ -1399,6 +1405,12 @@ inline CacheAllocationPtr ZSTD_Uncompress(
 
   auto output = AllocateBlock(output_len, allocator);
   size_t actual_output_length = 0;
+
+#ifdef KAE
+  (void)info;
+  actual_output_length =
+      ZSTD_decompress(output.get(), output_len, input_data, input_length);
+#else
 #if ZSTD_VERSION_NUMBER >= 500  // v0.5.0+
   ZSTD_DCtx* context = info.context().GetZSTDContext();
   assert(context != nullptr);
@@ -1419,6 +1431,7 @@ inline CacheAllocationPtr ZSTD_Uncompress(
   actual_output_length =
       ZSTD_decompress(output.get(), output_len, input_data, input_length);
 #endif  // ZSTD_VERSION_NUMBER >= 500
+#endif	// KAE 
   assert(actual_output_length == output_len);
   *uncompressed_size = actual_output_length;
   return output;
