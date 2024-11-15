@@ -171,6 +171,7 @@ else()
 
   if(WITH_ZSTD)
     if(ENABLE_KAEZSTD)
+      add_definitions(-DKAE)
       link_directories("/usr/local/kaezstd/lib")
       link_directories("/usr/local/lib")
     endif()
