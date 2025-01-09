@@ -64,7 +64,8 @@ if(CCACHE_FOUND)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
 endif(CCACHE_FOUND)
 
-option(DISABLE_KSAL "build without Ksal" OFF)
+option(WITH_KSAL "build with Ksal" ON)
+option(WITH_KP_OPT "build with Kunpeng optimization" ON)
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
 option(WITH_LIBURING "build with liburing" ON)
 option(WITH_SNAPPY "build with SNAPPY" OFF)
@@ -74,14 +75,16 @@ option(WITH_ZSTD "build with zstd" OFF)
 option(ENABLE_KAEZSTD "enable kaezstd" OFF)
 option(WITH_WINDOWS_UTF8_FILENAMES "use UTF8 as characterset for opening files, regardles of the system code page" OFF)
 
-if(NOT DISABLE_KSAL)
+if(WITH_KSAL)
 	EXECUTE_PROCESS(COMMAND sh ../cpu_detect.sh
         	RESULT_VARIABLE ARCH_KUNPENG
 	)
 	if(ARCH_KUNPENG)
-        	add_compile_definitions(ARCH_KUNPENG)
 	        list(APPEND THIRDPARTY_LIBS ksal ksal_libc)
 	endif()
+endif()
+if(WITH_KP_OPT)
+	add_compile_definitions(WITH_KP_OPT)
 endif()
 
 if (WITH_WINDOWS_UTF8_FILENAMES)
