@@ -28,11 +28,14 @@ else
 		elif [ ${!i} == "DISABLE_KP_OPT" ]
 		then
 			type="$type -DWITH_KP_OPT=OFF"
+		elif [ ${!i} == "DISABLE_KAEZSTD" ]
+		then
+			type="$type -DENABLE_KAEZSTD=OFF"
 		else
 			echo Usage:
 			echo sh build.sh [mode] [options]
 			echo mode: Release, RelWithDebInfo, Debug or UTONLY
-			echo options: DISABLE_KSAL, DISABLE_KP_OPT
+			echo options: DISABLE_KSAL, DISABLE_KP_OPT, DISABLE_KAEZSTD
 			exit 1
 		fi
 	done
