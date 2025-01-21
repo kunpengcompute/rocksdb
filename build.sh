@@ -1,6 +1,6 @@
 if [ $# -eq 0 ]
 then
-	cmd="cmake -DCMAKE_BUILD_TYPE=Release .."
+	cmd="cmake -DWITH_ZSTD=ON -DCMAKE_BUILD_TYPE=Release .."
 else
 	mode=$1
 	pos=2
@@ -39,6 +39,7 @@ else
 			exit 1
 		fi
 	done
+	type="$type -DWITH_ZSTD=ON"
 	cmd="cmake $type .."
 fi
 #cmd=$cmd" -DWITH_KSAL=OFF -DWITH_KP_OPT=ON"
