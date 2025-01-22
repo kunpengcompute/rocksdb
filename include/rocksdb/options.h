@@ -833,6 +833,10 @@ struct DBOptions {
   // Default: false
   bool use_direct_reads = false;
 
+  // Use O_DIRECT for user write.
+  // Default: false
+  bool use_direct_writes = false;
+
   // Use O_DIRECT for writes in background flush and compactions.
   // Default: false
   bool use_direct_io_for_flush_and_compaction = false;

@@ -1547,6 +1547,9 @@ DEFINE_bool(mmap_write, ROCKSDB_NAMESPACE::Options().allow_mmap_writes,
 DEFINE_bool(use_direct_reads, ROCKSDB_NAMESPACE::Options().use_direct_reads,
             "Use O_DIRECT for reading data");
 
+DEFINE_bool(use_direct_writes, ROCKSDB_NAMESPACE::Options().use_direct_writes,
+            "Use O_DIRECT for writing data");
+
 DEFINE_bool(use_direct_io_for_flush_and_compaction,
             ROCKSDB_NAMESPACE::Options().use_direct_io_for_flush_and_compaction,
             "Use O_DIRECT for background flush and compaction writes");
@@ -4106,6 +4109,7 @@ class Benchmark {
     options.allow_mmap_reads = FLAGS_mmap_read;
     options.allow_mmap_writes = FLAGS_mmap_write;
     options.use_direct_reads = FLAGS_use_direct_reads;
+    options.use_direct_writes = FLAGS_use_direct_writes;
     options.use_direct_io_for_flush_and_compaction =
         FLAGS_use_direct_io_for_flush_and_compaction;
     options.manual_wal_flush = FLAGS_manual_wal_flush;
@@ -7207,6 +7211,11 @@ class Benchmark {
     }
 
     // the number of iterations is the larger of read_ or write_
+    int batch_size = 0;
+    WriteBatch batch(/*reserved_bytes=*/0, /*max_bytes=*/0,
+                     FLAGS_write_batch_protection_bytes_per_key,
+                     user_timestamp_size_);
+
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
@@ -7238,15 +7247,29 @@ class Benchmark {
         // then do all the corresponding number of puts
         // for all the gets we have done earlier
         Status s;
-        if (user_timestamp_size_ > 0) {
-          Slice ts = mock_app_clock_->Allocate(ts_guard.get());
-          s = db->Put(write_options_, key, ts, gen.Generate());
+
+        if (entries_per_batch_ > 1) {
+          // 凑batch
+          if ((batch_size + 1) % entries_per_batch_ != 0 &&
+              (writes_done + 1) != FLAGS_num) {
+            batch.Put(key, gen.Generate());
+            batch_size++;
+          } else {
+            batch_size = 0;
+            db->Write(write_options_, &batch);
+            batch.Clear();
+          }
         } else {
-          s = db->Put(write_options_, key, gen.Generate());
-        }
-        if (!s.ok()) {
-          fprintf(stderr, "put error: %s\n", s.ToString().c_str());
-          ErrorExit();
+          if (user_timestamp_size_ > 0) {
+            Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+            s = db->Put(write_options_, key, ts, gen.Generate());
+          } else {
+            s = db->Put(write_options_, key, gen.Generate());
+          }
+          if (!s.ok()) {
+            fprintf(stderr, "put error: %s\n", s.ToString().c_str());
+            ErrorExit();
+          }
         }
         put_weight--;
         writes_done++;

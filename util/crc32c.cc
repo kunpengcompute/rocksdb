@@ -250,8 +250,27 @@ static inline uint32_t LE_LOAD32(const uint8_t* p) {
 }
 #endif  // !__SSE4_2__
 
+#ifdef WITH_KP_OPT
+#if ((defined(__SSE4_2__) && (defined(__LP64__) || defined(_WIN64))) || defined(__ARM_FEATURE_CRC32))
+static inline uint64_t LE_LOAD64(const uint8_t* p) {
+  return DecodeFixed64(reinterpret_cast<const char*>(p));
+}
+#endif
+#else
+#if defined(__SSE4_2__) && (defined(__LP64__) || defined(_WIN64))
+static inline uint64_t LE_LOAD64(const uint8_t* p) {
+  return DecodeFixed64(reinterpret_cast<const char*>(p));
+}
+#endif
+#endif
+
+
 static inline void DefaultCRC32(uint64_t* l, uint8_t const** p) {
 #ifndef __SSE4_2__
+#ifdef WITH_KP_OPT
+  *l = __crc32cd(*l, LE_LOAD64(*p));
+  *p += 8;
+#else
   uint32_t c = static_cast<uint32_t>(*l ^ LE_LOAD32(*p));
   *p += 4;
   *l = table3_[c & 0xff] ^ table2_[(c >> 8) & 0xff] ^
@@ -261,8 +280,9 @@ static inline void DefaultCRC32(uint64_t* l, uint8_t const** p) {
   *p += 4;
   *l = table3_[c & 0xff] ^ table2_[(c >> 8) & 0xff] ^
        table1_[(c >> 16) & 0xff] ^ table0_[c >> 24];
+#endif
 #elif defined(__LP64__) || defined(_WIN64)
-  *l = _mm_crc32_u64(*l, DecodeFixed64(reinterpret_cast<const char*>(*p)));
+  *l = _mm_crc32_u64(*l, LE_LOAD64(*p));
   *p += 8;
 #else
   *l = _mm_crc32_u32(static_cast<unsigned int>(*l), LE_LOAD32(*p));
@@ -271,6 +291,39 @@ static inline void DefaultCRC32(uint64_t* l, uint8_t const** p) {
   *p += 4;
 #endif
 }
+
+#ifdef WITH_KP_OPT
+#define PREFL1_64B(ptr) __builtin_prefetch((ptr), 0, 0)
+#define PREFL2_64B(ptr) __builtin_prefetch((ptr), 0, 2)
+#define PREFL1L2_256B(l1ptr, l2ptr) do { \
+    PREFL1_64B((l1ptr) + 0 * 64);  \
+    PREFL2_64B((l2ptr) + 0 * 64);  \
+    PREFL1_64B((l1ptr) + 1 * 64);  \
+    PREFL2_64B((l2ptr) + 1 * 64);  \
+    PREFL1_64B((l1ptr) + 2 * 64);  \
+    PREFL2_64B((l2ptr) + 2 * 64);  \
+    PREFL1_64B((l1ptr) + 3 * 64);  \
+    PREFL2_64B((l2ptr) + 3 * 64);  \
+} while (0)
+
+#define CRC32CD_64B(crc, ptr) do { \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 0)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 1)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 2)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 3)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 4)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 5)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 6)); \
+    (crc) = __crc32cd((crc), *(const uint64_t *)((ptr) + 8 * 7)); \
+} while (0)
+#define CRC32CD_64B_X4(crc, ptr) do { \
+    CRC32CD_64B((crc), (ptr) + 0 * 64); \
+    CRC32CD_64B((crc), (ptr) + 1 * 64); \
+    CRC32CD_64B((crc), (ptr) + 2 * 64); \
+    CRC32CD_64B((crc), (ptr) + 3 * 64); \
+} while (0)
+#endif
+
 
 template <void (*CRC32)(uint64_t*, uint8_t const**)>
 uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
@@ -297,6 +350,13 @@ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
       STEP1;
     }
   }
+#ifdef WITH_KP_OPT
+    while ((e-p)>= 256) { 
+        PREFL1L2_256B(p + 704, p + 1984); 
+        CRC32CD_64B_X4(l, p);
+        p += 256; 
+    }
+#endif
   // Process bytes 16 at a time
   while ((e - p) >= 16) {
     CRC32(&l, &p);
