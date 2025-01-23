@@ -1,6 +1,6 @@
 if [ $# -eq 0 ]
 then
-	cmd="cmake -DCMAKE_BUILD_TYPE=Release .."
+	cmd="cmake -DWITH_ZSTD=ON -DCMAKE_BUILD_TYPE=Release .."
 else
 	mode=$1
 	pos=2
@@ -28,14 +28,18 @@ else
 		elif [ ${!i} == "DISABLE_KP_OPT" ]
 		then
 			type="$type -DWITH_KP_OPT=OFF"
+		elif [ ${!i} == "DISABLE_KAEZSTD" ]
+		then
+			type="$type -DENABLE_KAEZSTD=OFF"
 		else
 			echo Usage:
 			echo sh build.sh [mode] [options]
 			echo mode: Release, RelWithDebInfo, Debug or UTONLY
-			echo options: DISABLE_KSAL, DISABLE_KP_OPT
+			echo options: DISABLE_KSAL, DISABLE_KP_OPT, DISABLE_KAEZSTD
 			exit 1
 		fi
 	done
+	type="$type -DWITH_ZSTD=ON"
 	cmd="cmake $type .."
 fi
 #cmd=$cmd" -DWITH_KSAL=OFF -DWITH_KP_OPT=ON"
