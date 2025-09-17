@@ -83,7 +83,7 @@ cd rocksdb/script
 sh test_perf_all.sh
 ```
 
->![](public_sys-resources/icon-note.gif) **说明：** 
+>**说明：** 
 >-   全量用例执行需10小时左右，可通过修改第8行kv大小，第13行db数量减少或修改用例。
 >-   默认读写路径为“/mnt/rocksdb\_data/test“，如需修改可编辑脚本test\_perf\_all.sh第二行basedir至指定路径，执行前请确保该路径存在。
 >-   如需将设备挂载至指定路径，执行下述指令，其中nvme0n1根据具体设备名称修改。
