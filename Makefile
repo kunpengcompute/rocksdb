@@ -136,6 +136,7 @@ CXXFLAGS += -DHAVE_POWER8
 CFLAGS +=  -DHAVE_POWER8
 HAVE_POWER8=1
 endif
+HAVE_POWER8=1
 
 # if we're compiling for release, compile without debug code (-DNDEBUG)
 ifeq ($(DEBUG_LEVEL),0)
@@ -672,6 +673,12 @@ shared-objects/util/crc32c_ppc.o: util/crc32c_ppc.c
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 
 shared-objects/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+shared-objects/util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+shared-objects/util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+shared-objects/util/crc32_iscsi_x6.o: util/crc32_iscsi_x6.S
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 endif
 $(shared_libobjects): shared-objects/%.o: %.cc
@@ -1786,6 +1793,15 @@ jls/util/crc32c_ppc.o: util/crc32c_ppc.c
 jls/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
 	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
 
+jls/util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
+	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
+
+jls/util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
+	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
+
+jls/util/crc32_iscsi_x6.o: util/crc32_iscsi_x6.S
+	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
+
 java_static_all_libobjects += $(java_static_ppc_libobjects)
 endif
 
@@ -1878,6 +1894,13 @@ jl/crc32c_ppc.o: util/crc32c_ppc.c
 
 jl/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+
+jl/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+jl/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+jl/crc32_iscsi_x6.o: util/crc32_iscsi_x6.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 java_all_libobjects += $(java_ppc_libobjects)
 endif
 
@@ -1948,6 +1971,12 @@ util/crc32c_ppc.o: util/crc32c_ppc.c
 
 util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+util/crc32_iscsi_x6.o: util/crc32_iscsi_x6.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 endif
 .cc.o:
 	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
@@ -2008,3 +2037,5 @@ endif
 endif
 endif
 endif
+
+
