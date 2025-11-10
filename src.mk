@@ -225,6 +225,10 @@ else
 LIB_SOURCES_ASM =
 LIB_SOURCES_C =
 endif
+LIB_SOURCES_ASM =\
+   util/crc32_iscsi_sve2.S \
+   util/crc32_iscsi_crc_ext.S \
+   util/crc32_iscsi_x6.S
 
 TOOL_LIB_SOURCES = \
   tools/ldb_cmd.cc                                              \
