@@ -606,6 +606,7 @@ set(SOURCES
         util/concurrent_task_limiter_impl.cc
         util/crc32c.cc
         util/crc32_iscsi_sve2.S
+        util/crc32_iscsi_crc_ext.S
         util/crc32_iscsi_x6.S
         util/delete_scheduler.cc
         util/dynamic_bloom.cc
