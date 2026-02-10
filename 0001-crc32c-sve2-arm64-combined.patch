@@ -1,0 +1,1109 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 132d3b04e..4422a5fcb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -365,6 +365,15 @@ if(MSVC)
+   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DEBUG")
+ endif()
+ 
++if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
++  CHECK_C_COMPILER_FLAG("-march=armv8-a+crc+crypto" HAS_ARMV8_CRC)
++  if(HAS_ARMV8_CRC)
++    message(STATUS "HAS_ARMV8_CRC yes")
++    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
++    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
++  endif(HAS_ARMV8_CRC)
++endif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
++
+ if(CMAKE_COMPILER_IS_GNUCXX)
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin-memcmp")
+ endif()
+@@ -605,6 +614,7 @@ set(SOURCES
+         util/concurrent_arena.cc
+         util/concurrent_task_limiter_impl.cc
+         util/crc32c.cc
++        util/crc32_iscsi_sve2.S
+         util/delete_scheduler.cc
+         util/dynamic_bloom.cc
+         util/event_logger.cc
+@@ -696,6 +706,11 @@ if(HAVE_POWER8)
+     util/crc32c_ppc_asm.S)
+ endif(HAVE_POWER8)
+ 
++if(HAS_ARMV8_CRC)
++  list(APPEND SOURCES
++    util/crc32c_arm64.cc)
++endif(HAS_ARMV8_CRC)
++
+ if(WIN32)
+   list(APPEND SOURCES
+     port/win/io_win.cc
+diff --git a/Makefile b/Makefile
+index eee0f9fba..41b9721b3 100644
+--- a/Makefile
++++ b/Makefile
+@@ -136,6 +136,7 @@ CXXFLAGS += -DHAVE_POWER8
+ CFLAGS +=  -DHAVE_POWER8
+ HAVE_POWER8=1
+ endif
++HAVE_POWER8=1
+ 
+ # if we're compiling for release, compile without debug code (-DNDEBUG)
+ ifeq ($(DEBUG_LEVEL),0)
+@@ -216,6 +217,12 @@ else
+ OPT += -DNDEBUG
+ endif
+ 
++ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
++CXXFLAGS += -march=armv8-a+crc+crypto
++CFLAGS += -march=armv8-a+crc+crypto
++ARMCRC_SOURCE=1
++endif
++
+ ifeq ($(PLATFORM), OS_AIX)
+ ARFLAGS = -X64 rs
+ STRIPFLAGS = -X64 -x
+@@ -673,6 +680,10 @@ shared-objects/util/crc32c_ppc.o: util/crc32c_ppc.c
+ 
+ shared-objects/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
+ 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++shared-objects/util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++shared-objects/util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+ endif
+ $(shared_libobjects): shared-objects/%.o: %.cc
+ 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) -c $< -o $@
+@@ -1786,6 +1797,12 @@ jls/util/crc32c_ppc.o: util/crc32c_ppc.c
+ jls/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
+ 	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
+ 
++jls/util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
++	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
++
++jls/util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
++	$(AM_V_CC)$(CC) $(CFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -c $< -o $@
++
+ java_static_all_libobjects += $(java_static_ppc_libobjects)
+ endif
+ 
+@@ -1878,6 +1895,12 @@ jl/crc32c_ppc.o: util/crc32c_ppc.c
+ 
+ jl/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
+ 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++
++jl/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++
++jl/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+ java_all_libobjects += $(java_ppc_libobjects)
+ endif
+ 
+@@ -1948,6 +1971,12 @@ util/crc32c_ppc.o: util/crc32c_ppc.c
+ 
+ util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
+ 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++
++util/crc32_iscsi_sve2.o: util/crc32_iscsi_sve2.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++
++util/crc32_iscsi_crc_ext.o: util/crc32_iscsi_crc_ext.S
++	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+ endif
+ .cc.o:
+ 	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
+diff --git a/TARGETS b/TARGETS
+index 073c977e5..d1f8711cd 100644
+--- a/TARGETS
++++ b/TARGETS
+@@ -218,6 +218,7 @@ cpp_library(
+         "util/concurrent_arena.cc",
+         "util/concurrent_task_limiter_impl.cc",
+         "util/crc32c.cc",
++        "util/crc32c_arm64.cc",
+         "util/delete_scheduler.cc",
+         "util/dynamic_bloom.cc",
+         "util/event_logger.cc",
+diff --git a/src.mk b/src.mk
+index 55b4e3427..1a42271ba 100644
+--- a/src.mk
++++ b/src.mk
+@@ -139,6 +139,7 @@ LIB_SOURCES =                                                   \
+   util/concurrent_arena.cc                                      \
+   util/concurrent_task_limiter_impl.cc                          \
+   util/crc32c.cc                                                \
++  util/crc32c_arm64.cc                                          \
+   util/delete_scheduler.cc                                      \
+   util/dynamic_bloom.cc                                         \
+   util/event_logger.cc                                          \
+@@ -225,6 +226,9 @@ else
+ LIB_SOURCES_ASM =
+ LIB_SOURCES_C =
+ endif
++LIB_SOURCES_ASM =\
++  util/crc32_iscsi_sve2.S \
++  util/crc32_iscsi_crc_ext.S
+ 
+ TOOL_LIB_SOURCES = \
+   tools/ldb_cmd.cc                                              \
+diff --git a/util/aarch64_label.h b/util/aarch64_label.h
+new file mode 100644
+index 000000000..f1e777c85
+--- /dev/null
++++ b/util/aarch64_label.h
+@@ -0,0 +1,18 @@
++#ifndef __AARCH64_LABEL_H__
++#define __AARCH64_LABEL_H__
++
++#ifdef __USER_LABEL_PREFIX__
++#define CONCAT1(a, b) CONCAT2(a, b)
++#define CONCAT2(a, b) a ## b
++#define cdecl(x) CONCAT1 (__USER_LABEL_PREFIX__, x)
++#else
++#define cdecl(x) x
++#endif
++
++#ifdef __APPLE__
++#define ASM_DEF_RODATA .section	__TEXT,__const
++#else
++#define ASM_DEF_RODATA .section .rodata
++#endif
++
++#endif
+\ No newline at end of file
+diff --git a/util/crc32_aarch64_common.h b/util/crc32_aarch64_common.h
+new file mode 100644
+index 000000000..792095e94
+--- /dev/null
++++ b/util/crc32_aarch64_common.h
+@@ -0,0 +1,291 @@
++#include "aarch64_label.h"
++
++.macro	crc32_hw_common		poly_type
++
++.ifc	\poly_type,crc32
++	mvn		wCRC,wCRC
++.endif
++	cbz		LEN, .zero_length_ret
++	tbz		BUF, 0, .align_short
++	ldrb		wdata,[BUF],1
++	sub		LEN,LEN,1
++	crc32_u8	wCRC,wCRC,wdata
++.align_short:
++	tst		BUF,2
++	ccmp		LEN,1,0,ne
++	bhi		.align_short_2
++	tst		BUF,4
++	ccmp		LEN,3,0,ne
++	bhi		.align_word
++
++.align_finish:
++
++	cmp		LEN, 63
++	bls		.loop_16B
++.loop_64B:
++	ldp		data0, data1, [BUF],#16
++	prfm		pldl2keep,[BUF,2048]
++	sub		LEN,LEN,#64
++	ldp		data2, data3, [BUF],#16
++	prfm		pldl1keep,[BUF,256]
++	cmp		LEN,#64
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	ldp		data0, data1, [BUF],#16
++	crc32_u64	wCRC, wCRC, data2
++	crc32_u64	wCRC, wCRC, data3
++	ldp		data2, data3, [BUF],#16
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	crc32_u64	wCRC, wCRC, data2
++	crc32_u64	wCRC, wCRC, data3
++	bge		.loop_64B
++
++.loop_16B:
++	cmp		LEN, 15
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16
++	cmp		LEN,15
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16
++	cmp		LEN,15
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16   //MUST less than 16B
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++.less_16B:
++	cmp		LEN, 7
++	bls		.less_8B
++	ldr		data0, [BUF], 8
++	sub		LEN, LEN, #8
++	crc32_u64	wCRC, wCRC, data0
++.less_8B:
++	cmp		LEN, 3
++	bls		.less_4B
++	ldr		wdata, [BUF], 4
++	sub		LEN, LEN, #4
++	crc32_u32	wCRC, wCRC, wdata
++.less_4B:
++	cmp		LEN, 1
++	bls		.less_2B
++	ldrh		wdata, [BUF], 2
++	sub		LEN, LEN, #2
++	crc32_u16	wCRC, wCRC, wdata
++.less_2B:
++	cbz		LEN, .zero_length_ret
++	ldrb		wdata, [BUF]
++	crc32_u8	wCRC, wCRC, wdata
++.zero_length_ret:
++.ifc	\poly_type,crc32
++	mvn		w0, wCRC
++.else
++	mov		w0, wCRC
++.endif
++	ret
++.align_short_2:
++	ldrh		wdata, [BUF], 2
++	sub		LEN, LEN, 2
++	tst		BUF, 4
++	crc32_u16	wCRC, wCRC, wdata
++	ccmp		LEN, 3, 0, ne
++	bls		.align_finish
++.align_word:
++	ldr		wdata, [BUF], 4
++	sub		LEN, LEN, #4
++	crc32_u32	wCRC, wCRC, wdata
++	b .align_finish
++.endm
++
++.macro	crc32_3crc_fold poly_type
++.ifc	\poly_type,crc32
++	mvn		wCRC,wCRC
++.endif
++	cbz		LEN, .zero_length_ret
++	tbz		BUF, 0, .align_short
++	ldrb		wdata,[BUF],1
++	sub		LEN,LEN,1
++	crc32_u8	wCRC,wCRC,wdata
++.align_short:
++	tst		BUF,2
++	ccmp		LEN,1,0,ne
++	bhi		.align_short_2
++	tst		BUF,4
++	ccmp		LEN,3,0,ne
++	bhi		.align_word
++
++.align_finish:
++	cmp	LEN,1023
++	adr	const_adr, .Lconstants
++	bls	1f
++	ldp	dconst0,dconst1,[const_adr]
++2:
++	ldr		crc0_data0,[ptr_crc0],8
++	prfm		pldl2keep,[ptr_crc0,3*1024-8]
++	mov		crc1,0
++	mov		crc2,0
++	add		ptr_crc1,ptr_crc0,336
++	add		ptr_crc2,ptr_crc0,336*2
++	crc32_u64	crc0,crc0,crc0_data0
++	.set		offset,0
++	.set		ptr_offset,8
++	.rept		5
++	ldp		crc0_data0,crc0_data1,[ptr_crc0],16
++	ldp		crc1_data0,crc1_data1,[ptr_crc1],16
++	.set		offset,offset+64
++	.set		ptr_offset,ptr_offset+16
++	prfm		pldl2keep,[ptr_crc0,3*1024-ptr_offset+offset]
++	crc32_u64	crc0,crc0,crc0_data0
++	crc32_u64	crc0,crc0,crc0_data1
++	ldp		crc2_data0,crc2_data1,[ptr_crc2],16
++	crc32_u64	crc1,crc1,crc1_data0
++	crc32_u64	crc1,crc1,crc1_data1
++	crc32_u64	crc2,crc2,crc2_data0
++	crc32_u64	crc2,crc2,crc2_data1
++	.endr
++	.set		l1_offset,0
++	.rept		10
++	ldp		crc0_data0,crc0_data1,[ptr_crc0],16
++	ldp		crc1_data0,crc1_data1,[ptr_crc1],16
++	.set		offset,offset+64
++	.set		ptr_offset,ptr_offset+16
++	prfm		pldl2keep,[ptr_crc0,3*1024-ptr_offset+offset]
++	prfm		pldl1keep,[ptr_crc0,2*1024-ptr_offset+l1_offset]
++	.set		l1_offset,l1_offset+64
++	crc32_u64	crc0,crc0,crc0_data0
++	crc32_u64	crc0,crc0,crc0_data1
++	ldp		crc2_data0,crc2_data1,[ptr_crc2],16
++	crc32_u64	crc1,crc1,crc1_data0
++	crc32_u64	crc1,crc1,crc1_data1
++	crc32_u64	crc2,crc2,crc2_data0
++	crc32_u64	crc2,crc2,crc2_data1
++	.endr
++
++	.rept		6
++	ldp		crc0_data0,crc0_data1,[ptr_crc0],16
++	ldp		crc1_data0,crc1_data1,[ptr_crc1],16
++	.set		ptr_offset,ptr_offset+16
++	prfm		pldl1keep,[ptr_crc0,2*1024-ptr_offset+l1_offset]
++	.set		l1_offset,l1_offset+64
++	crc32_u64	crc0,crc0,crc0_data0
++	crc32_u64	crc0,crc0,crc0_data1
++	ldp		crc2_data0,crc2_data1,[ptr_crc2],16
++	crc32_u64	crc1,crc1,crc1_data0
++	crc32_u64	crc1,crc1,crc1_data1
++	crc32_u64	crc2,crc2,crc2_data0
++	crc32_u64	crc2,crc2,crc2_data1
++	.endr
++	ldr		crc2_data0,[ptr_crc2]
++	fmov		dtmp0,xcrc0
++	fmov		dtmp1,xcrc1
++	crc32_u64	crc2,crc2,crc2_data0          //crc2 = CRC32(crc2 ⊕ crc2_data0, polynomial)
++	add		ptr_crc0,ptr_crc0,1024-(336+8)
++	pmull		vtmp0.1q,vtmp0.1d,vconst0.1d  //vtmp0.1d 和 vconst0.1d 是两个64位数值, vtmp0.1q 128位。vtmp0.1q = vtmp0.1d ⊗ vconst0.1d
++	sub		LEN,LEN,1024
++	pmull		vtmp1.1q,vtmp1.1d,vconst1.1d
++	cmp		LEN,1024
++	fmov		xcrc0,dtmp0
++	fmov		xcrc1,dtmp1
++	crc32_u64	crc0,wzr,xcrc0
++	crc32_u64	crc1,wzr,xcrc1
++
++	eor		crc0,crc0,crc2
++	eor		crc0,crc0,crc1
++
++	bhs	2b
++1:
++	cmp		LEN, 63
++	bls		.loop_16B
++.loop_64B:
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#64
++	ldp		data2, data3, [BUF],#16
++	cmp		LEN,#64
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	ldp		data0, data1, [BUF],#16
++	crc32_u64	wCRC, wCRC, data2
++	crc32_u64	wCRC, wCRC, data3
++	ldp		data2, data3, [BUF],#16
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	crc32_u64	wCRC, wCRC, data2
++	crc32_u64	wCRC, wCRC, data3
++	bge		.loop_64B
++
++.loop_16B:
++	cmp		LEN, 15
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16
++	cmp		LEN,15
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16
++	cmp		LEN,15
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++	bls		.less_16B
++	ldp		data0, data1, [BUF],#16
++	sub		LEN,LEN,#16   //MUST less than 16B
++	crc32_u64	wCRC, wCRC, data0
++	crc32_u64	wCRC, wCRC, data1
++.less_16B:
++	cmp		LEN, 7
++	bls		.less_8B
++	ldr		data0, [BUF], 8
++	sub		LEN, LEN, #8
++	crc32_u64	wCRC, wCRC, data0
++.less_8B:
++	cmp		LEN, 3
++	bls		.less_4B
++	ldr		wdata, [BUF], 4
++	sub		LEN, LEN, #4
++	crc32_u32	wCRC, wCRC, wdata
++.less_4B:
++	cmp		LEN, 1
++	bls		.less_2B
++	ldrh		wdata, [BUF], 2
++	sub		LEN, LEN, #2
++	crc32_u16	wCRC, wCRC, wdata
++.less_2B:
++	cbz		LEN, .zero_length_ret
++	ldrb		wdata, [BUF]
++	crc32_u8	wCRC, wCRC, wdata
++.zero_length_ret:
++.ifc	\poly_type,crc32
++	mvn		w0, wCRC
++.else
++	mov		w0, wCRC
++.endif
++	ret
++.align_short_2:
++	ldrh		wdata, [BUF], 2
++	sub		LEN, LEN, 2
++	tst		BUF, 4
++	crc32_u16	wCRC, wCRC, wdata
++	ccmp		LEN, 3, 0, ne
++	bls		.align_finish
++.align_word:
++	ldr		wdata, [BUF], 4
++	sub		LEN, LEN, #4
++	crc32_u32	wCRC, wCRC, wdata
++	b .align_finish
++.Lconstants:
++.ifc	\poly_type,crc32
++	.quad		0xb486819b
++	.quad		0x76278617
++.else
++	.quad		0xe417f38a
++	.quad		0x8f158014
++.endif
++
++.endm
+\ No newline at end of file
+diff --git a/util/crc32_iscsi_crc_ext.S b/util/crc32_iscsi_crc_ext.S
+new file mode 100644
+index 000000000..b736240b9
+--- /dev/null
++++ b/util/crc32_iscsi_crc_ext.S
+@@ -0,0 +1,40 @@
++	.text
++	.align		6
++	.arch		armv8-a+crc
++
++
++#include "crc32_aarch64_common.h"
++	BUF		.req	x0
++	LEN		.req	x1
++	wCRC		.req	w2
++	data0		.req	x4
++	data1		.req	x5
++	data2		.req	x6
++	data3		.req	x7
++	wdata		.req	w3
++.macro	crc32_u64	dst,src,data
++	crc32cx		\dst,\src,\data
++.endm
++.macro	crc32_u32	dst,src,data
++	crc32cw		\dst,\src,\data
++.endm
++.macro	crc32_u16	dst,src,data
++	crc32ch		\dst,\src,\data
++.endm
++.macro	crc32_u8	dst,src,data
++	crc32cb		\dst,\src,\data
++.endm
++
++	/**
++	 * uint32_t crc32_iscsi_crc_ext(const unsigned char *BUF,
++	 *                  uint64_t LEN,uint32_t wCRC);
++	 */
++	.global	cdecl(crc32_iscsi_crc_ext)
++#ifndef __APPLE__
++	.type	crc32_iscsi_crc_ext, %function
++#endif
++cdecl(crc32_iscsi_crc_ext):
++	crc32_hw_common	crc32c
++#ifndef __APPLE__
++	.size	crc32_iscsi_crc_ext, .-crc32_iscsi_crc_ext
++#endif
+\ No newline at end of file
+diff --git a/util/crc32_iscsi_sve2.S b/util/crc32_iscsi_sve2.S
+new file mode 100644
+index 000000000..7285fc9d2
+--- /dev/null
++++ b/util/crc32_iscsi_sve2.S
+@@ -0,0 +1,290 @@
++	.arch armv8.5-a+crypto+crc+sve2-aes
++	.file	"crc32_iscsi_sve2.c"
++	.text
++	.align	2
++	.p2align 4,,11
++	.global	crc32_iscsi_sve2
++	.type	crc32_iscsi_sve2, %function
++crc32_iscsi_sve2:
++.LFB4364:
++	.cfi_startproc
++	cntb	x11, all, mul #8
++	cmp	w1, w11
++	blt	.L9
++	cntb	x10
++	cntb	x9, all, mul #2
++	mov	x4, x0
++	uxtw	x2, w2
++	sxtw	x10, w10
++	sxtw	x9, w9
++	cntb	x8, all, mul #3
++	cntb	x7, all, mul #4
++	add	x13, x4, x9
++	mov	z0.d, x2
++	sxtw	x8, w8
++	add	x2, x4, x10
++	sxtw	x7, w7
++	cntb	x6, all, mul #5
++	cntb	x5, all, mul #6
++	ptrue	p0.b, all
++	sub	sp, sp, #48
++	.cfi_def_cfa_offset 48
++	sxtw	x6, w6
++	sxtw	x5, w5
++	cntb	x0, all, mul #7
++	ld1d	z2.d, p0/z, [x2]
++	ld1d	z4.d, p0/z, [x13]
++	add	x2, x4, x8
++	add	x13, x4, x7
++	mov	z1.b, #0
++	add	x12, sp, 31
++	sxtw	x0, w0
++	sxtw	x3, w11
++	ptrue	p1.b, vl1
++	ld1d	z3.d, p0/z, [x2]
++	splice	z0.d, p1, z0.d, z1.d
++	add	x2, x4, x6
++	ld1d	z19.d, p0/z, [x13]
++	decb	x1, all, mul #8
++	add	x13, x4, x5
++	ld1d	z1.d, p0/z, [x4]
++	ld1d	z18.d, p0/z, [x2]
++	movprfx	z1.d, p0/z, z1.d
++	eor	z1.d, p0/m, z1.d, z0.d
++	add	x2, x4, x0
++	ld1d	z17.d, p0/z, [x13]
++	and	x12, x12, -32
++	adrp	x13, .LANCHOR0
++	add	x4, x4, x3
++	add	x13, x13, :lo12:.LANCHOR0
++	ld1d	z7.d, p0/z, [x2]
++	ld1d	z0.d, p0/z, [x13]
++	cmp	w1, w11
++	blt	.L3
++	add	x10, x4, x10
++	add	x9, x4, x9
++	add	x8, x4, x8
++	add	x7, x4, x7
++	add	x6, x4, x6
++	add	x2, x4, x5
++	add	x0, x4, x0
++	.p2align 3,,7
++.L4:
++	ld1d	z5.d, p0/z, [x4]
++	prfm    PLDL1STRM, [x4, 768]
++	prfm    PLDL2STRM, [x4, 2048]
++	prfm    PLDL2STRM, [x4, 3072]
++	prfm    PLDL3STRM, [x4, 4096]
++	pmullt	z16.q, z1.d, z0.d
++	pmullb	z1.q, z1.d, z0.d
++	eor3	z1.d, z1.d, z16.d, z5.d
++	ld1d	z5.d, p0/z, [x10]
++	prfm    PLDL1STRM, [x10, 768]
++	prfm    PLDL2STRM, [x10, 2048]
++	prfm    PLDL2STRM, [x10, 3072]
++	prfm    PLDL3STRM, [x10, 4096]
++	pmullt	z6.q, z2.d, z0.d
++	pmullb	z2.q, z2.d, z0.d
++	eor3	z2.d, z2.d, z6.d, z5.d
++	ld1d	z5.d, p0/z, [x9]
++	prfm    PLDL1STRM, [x9, 768]
++	prfm    PLDL2STRM, [x9, 2048]
++	prfm    PLDL2STRM, [x9, 3072]
++	prfm    PLDL3STRM, [x9, 4096]
++	pmullt	z16.q, z4.d, z0.d
++	pmullb	z4.q, z4.d, z0.d
++	eor3	z4.d, z4.d, z16.d, z5.d
++	ld1d	z5.d, p0/z, [x8]
++	prfm    PLDL1STRM, [x8, 768]
++	prfm    PLDL2STRM, [x8, 2048]
++	prfm    PLDL2STRM, [x8, 3072]
++	prfm    PLDL3STRM, [x8, 4096]
++	pmullt	z6.q, z3.d, z0.d
++	pmullb	z3.q, z3.d, z0.d
++	eor3	z3.d, z3.d, z6.d, z5.d
++	ld1d	z5.d, p0/z, [x7]
++	prfm    PLDL1STRM, [x7, 768]
++	prfm    PLDL2STRM, [x7, 2048]
++	prfm    PLDL2STRM, [x7, 3072]
++	prfm    PLDL3STRM, [x7, 4096]
++	pmullt	z16.q, z19.d, z0.d
++	pmullb	z19.q, z19.d, z0.d
++	eor3	z19.d, z19.d, z16.d, z5.d
++	ld1d	z5.d, p0/z, [x6]
++	prfm    PLDL1STRM, [x6, 768]
++	prfm    PLDL2STRM, [x6, 2048]
++	prfm    PLDL2STRM, [x6, 3072]
++	prfm    PLDL3STRM, [x6, 4096]
++	pmullt	z6.q, z18.d, z0.d
++	decb	x1, all, mul #8
++	pmullb	z18.q, z18.d, z0.d
++	eor3	z18.d, z18.d, z6.d, z5.d
++	ld1d	z5.d, p0/z, [x2]
++	prfm    PLDL1STRM, [x2, 768]
++	prfm    PLDL2STRM, [x2, 2048]
++	prfm    PLDL2STRM, [x2, 3072]
++	prfm    PLDL3STRM, [x2, 4096]
++	pmullt	z16.q, z17.d, z0.d
++	pmullt	z6.q, z7.d, z0.d
++	pmullb	z17.q, z17.d, z0.d
++	pmullb	z7.q, z7.d, z0.d
++	eor3	z17.d, z17.d, z16.d, z5.d
++	add	x4, x4, x3
++	ld1d	z5.d, p0/z, [x0]
++	prfm    PLDL1STRM, [x0, 768]
++	prfm    PLDL2STRM, [x0, 2048]
++	prfm    PLDL2STRM, [x0, 3072]
++	prfm    PLDL3STRM, [x0, 4096]
++	add	x10, x10, x3
++	add	x9, x9, x3
++	add	x8, x8, x3
++	add	x7, x7, x3
++	add	x6, x6, x3
++	add	x2, x2, x3
++	add	x0, x0, x3
++	eor3	z7.d, z7.d, z6.d, z5.d
++	cmp	w1, w11
++	bge	.L4
++.L3:
++	ptrue	p0.b, all
++	add	x0, x13, 64
++	add	x2, x13, 32
++	ld1d	z5.d, p0/z, [x2]
++	pmullt	z6.q, z1.d, z5.d
++	pmullt	z16.q, z4.d, z5.d
++	pmullb	z0.q, z1.d, z5.d
++	pmullb	z4.q, z4.d, z5.d
++	ld1d	z1.d, p0/z, [x0]
++	eor3	z4.d, z4.d, z16.d, z17.d
++	eor3	z0.d, z0.d, z6.d, z19.d
++	add	x13, x13, 96
++	mov	x0, 3582
++	ld1d	z6.d, p0/z, [x13]
++	pmullt	z19.q, z0.d, z1.d
++	movk	x0, 0xf20c, lsl 16
++	pmullb	z0.q, z0.d, z1.d
++	eor3	z0.d, z0.d, z19.d, z4.d
++	pmullt	z4.q, z0.d, z6.d
++	pmullb	z0.q, z0.d, z6.d
++	pmullt	z6.q, z2.d, z5.d
++	pmullb	z2.q, z2.d, z5.d
++	eor3	z2.d, z2.d, z6.d, z18.d
++	fmov	d6, x0
++	adrp	x0, .LC0
++	pmullt	z16.q, z3.d, z5.d
++	pmullb	z3.q, z3.d, z5.d
++	pmullt	z5.q, z2.d, z1.d
++	eor3	z3.d, z3.d, z16.d, z7.d
++	pmullb	z2.q, z2.d, z1.d
++	eor3	z2.d, z2.d, z5.d, z3.d
++	eor3	z0.d, z0.d, z4.d, z2.d
++	ldr	q16, [x0, #:lo12:.LC0]
++	st1d	z0.d, p0, [x12]
++	mov	x0, 32039
++	ldp	q1, q0, [x12]
++	movk	x0, 0x493c, lsl 16
++	fmov	d3, x0
++	mov	x0, 43704
++	movk	x0, 0xdd45, lsl 16
++	fmov	d4, x0
++	fmov	d17, d1
++	fmov	d7, xzr
++	pmull2	v16.1q, v16.2d, v1.2d
++	mov	x0, 5105
++	movi	v1.4s, 0
++	movk	x0, 0xdea7, lsl 16
++	fmov	d2, x0
++	mov	x0, 30449
++	pmull	v6.1q, v6.1d, v17.1d
++	movk	x0, 0x5ec, lsl 16
++	eor	v0.16b, v0.16b, v16.16b
++	movk	x0, 0x1, lsl 32
++	fmov	d5, x0
++	eor	v0.16b, v0.16b, v6.16b
++	pmull	v6.1q, v0.1d, v3.1d
++	ins	v1.d[0], v0.d[1]
++	eor	v1.16b, v1.16b, v6.16b
++	fmov	s3, s1
++	ext	v1.16b, v1.16b, v1.16b, #4
++	pmull	v4.1q, v4.1d, v3.1d
++	ins	v0.d[0], v4.d[0]
++	ins	v0.d[1], v7.d[0]
++	eor	v0.16b, v0.16b, v1.16b
++	fmov	s1, s0
++	pmull	v2.1q, v2.1d, v1.1d
++	fmov	s2, s2
++	pmull	v2.1q, v5.1d, v2.1d
++	eor	v0.16b, v0.16b, v2.16b
++	umov	w0, v0.s[1]
++	cmp	w1, 0
++	bgt	.L11
++	add	sp, sp, 48
++	.cfi_remember_state
++	.cfi_def_cfa_offset 0
++	ret
++	.p2align 2,,3
++.L11:
++	.cfi_restore_state
++	mov	w2, w0
++	mov	x0, x4
++	add	sp, sp, 48
++	.cfi_def_cfa_offset 0
++.L9:
++	b	crc32_iscsi_crc_ext
++	.cfi_endproc
++.LFE4364:
++	.size	crc32_iscsi_sve2, .-crc32_iscsi_sve2
++	.section	.rodata.cst16,"aM",@progbits,16
++	.align	4
++.LC0:
++	.xword	4060876286
++	.xword	1228700967
++	.section	.rodata
++	.align	4
++	.set	.LANCHOR0,. + 0
++	.type	p4.3, %object
++	.size	p4.3, 32
++p4.3:
++	.word	-592348508
++	.word	0
++	.word	-1176491130
++	.word	0
++	.word	-592348508
++	.word	0
++	.word	-1176491130
++	.word	0
++	.type	p4.2, %object
++	.size	p4.2, 32
++p4.2:
++	.word	1771228834
++	.word	0
++	.word	221995154
++	.word	0
++	.word	1771228834
++	.word	0
++	.word	221995154
++	.word	0
++	.type	p3.1, %object
++	.size	p3.1, 32
++p3.1:
++	.word	1947135746
++	.word	0
++	.word	-1639260680
++	.word	0
++	.word	1947135746
++	.word	0
++	.word	-1639260680
++	.word	0
++	.type	p2.0, %object
++	.size	p2.0, 32
++p2.0:
++	.word	1034342603
++	.word	0
++	.word	-1169177970
++	.word	0
++	.word	1034342603
++	.word	0
++	.word	-1169177970
++	.word	0
++	.ident	"GCC: (GNU) 11.3.0"
++	.section	.note.GNU-stack,"",@progbits
+\ No newline at end of file
+diff --git a/util/crc32c.cc b/util/crc32c.cc
+index 9e4b65e66..d09c535ac 100644
+--- a/util/crc32c.cc
++++ b/util/crc32c.cc
+@@ -11,12 +11,16 @@
+ // four bytes at a time.
+ #include "util/crc32c.h"
+ #include <stdint.h>
++#include "crc32c_asm.h"
++#include <sys/auxv.h>
++#include <asm/hwcap.h>
+ #ifdef HAVE_SSE42
+ #include <nmmintrin.h>
+ #include <wmmintrin.h>
+ #endif
+ #include "util/coding.h"
+ #include "util/util.h"
++#include "util/crc32c_arm64.h"
+ 
+ #ifdef __powerpc64__
+ #include "util/crc32c_ppc.h"
+@@ -37,6 +41,10 @@
+ 
+ #endif
+ 
++#if defined(HAVE_ARM64_CRC)
++bool pmull_runtime_flag = false;
++#endif
++
+ namespace rocksdb {
+ namespace crc32c {
+ 
+@@ -354,6 +362,15 @@ static inline void Fast_CRC32(uint64_t* l, uint8_t const **p) {
+ 
+ template<void (*CRC32)(uint64_t*, uint8_t const**)>
+ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
++  unsigned long auxval2 = getauxval(AT_HWCAP2);
++  if (auxval2 & HWCAP2_SVE2) {
++    return ~crc32_iscsi_sve2(buf, size, ~crc);
++#if defined(HAVE_ARM64_CRC)
++  } else if (crc32c_check()) {
++    pmull_runtime_flag = crc32c_pmull_check();
++    return crc32c_arm64(crc, (const unsigned char *)buf, size);
++#endif
++  }
+ 
+   const uint8_t *p = reinterpret_cast<const uint8_t *>(buf);
+   const uint8_t *e = p + size;
+diff --git a/util/crc32c_arm64.cc b/util/crc32c_arm64.cc
+new file mode 100644
+index 000000000..5763ae1f0
+--- /dev/null
++++ b/util/crc32c_arm64.cc
+@@ -0,0 +1,157 @@
++#include "util/crc32c_arm64.h"
++
++#if defined(HAVE_ARM64_CRC)
++
++#if defined(__linux__)
++#include <asm/hwcap.h>
++#include <sys/auxv.h>
++#endif
++#if defined(__APPLE__)
++#include <sys/sysctl.h>
++#endif
++
++#if !defined(HWCAP_CRC32)
++#define HWCAP_CRC32 (1ULL << 7)
++#endif
++#if !defined(HWCAP_PMULL)
++#define HWCAP_PMULL (1ULL << 4)
++#endif
++
++constexpr size_t kParallelBlockLength = 42; // 单路并行块长度（8字节*42）
++constexpr size_t k1024ByteThreshold = 1024;    // 大尺寸数据阈值
++constexpr uint32_t kPMULLMergeK0 = 0xe417f38a;  // PMULL合并参数k0
++constexpr uint32_t kPMULLMergeK1 = 0x8f158014;  // PMULL合并参数k1
++
++#ifdef HAVE_ARM64_CRYPTO
++#define CRC32C24BYTES(ITR)                                                  \
++    crc1 = crc32c_u64(crc1, *(buf64 + kParallelBlockLength + (ITR)));       \
++    crc2 = crc32c_u64(crc2, *(buf64 + kParallelBlockLength * 2 + (ITR)));   \
++    crc0 = crc32c_u64(crc0, *(buf64 + (ITR)));
++
++#define CRC32C7X24BYTES(ITR)    \
++    CRC32C24BYTES((ITR)*7 + 0)  \
++    CRC32C24BYTES((ITR)*7 + 1)  \
++    CRC32C24BYTES((ITR)*7 + 2)  \
++    CRC32C24BYTES((ITR)*7 + 3)  \
++    CRC32C24BYTES((ITR)*7 + 4)  \
++    CRC32C24BYTES((ITR)*7 + 5)  \
++    CRC32C24BYTES((ITR)*7 + 6)
++#endif
++
++extern bool pmull_runtime_flag;
++
++uint32_t crc32c_check(void) {
++#if defined(__FreeBSD__)
++    uint64_t auxv = 0;
++    elf_aux_info(AT_HWCAP, &auxv, sizeof(auxv));
++    return (auxv & HWCAP_CRC32) != 0;
++#elif defined(__linux__)
++    const uint64_t auxv = getauxval(AT_HWCAP);
++    return (auxv & HWCAP_CRC32) != 0;
++#elif defined(__APPLE__)
++    int crc_supported = 0;
++    const size_t len = sizeof(crc_supported);
++    if (sysctlbyname("hw.optional.armv8_crc32", &crc_supported, &len, nullptr, 0) == -1) {
++        return 0;
++    }
++    return crc_supported == 1;
++#else
++    return 0;
++#endif
++}
++
++bool crc32c_pmull_check(void) {
++#if defined(__FreeBSD__)
++    uint64_t auxv = 0;
++    elf_aux_info(AT_HWCAP, &auxv, sizeof(auxv));
++    return (auxv & HWCAP_PMULL) != 0;
++#elif defined(__linux__)
++    const uint64_t auxv = getauxval(AT_HWCAP);
++    return (auxv & HWCAP_PMULL) != 0;
++#elif defined(__APPLE__)
++    return true;
++#else
++    return false;
++#endif
++}
++
++#ifdef ROCKSDB_UBSAN_RUN
++#if defined(__clang__)
++__attribute__((__no_sanitize__("alignment")))
++#elif defined(__GNUC__)
++__attribute__((__no_sanitize_undefined__))
++#endif
++#endif
++uint32_t crc32c_arm64(uint32_t crc, unsigned char const *data, size_t len) {
++    crc ^= 0xffffffffU;
++
++    // 空数据快速返回
++    if (len == 0) {
++        return crc ^ 0xffffffffU;
++    }
++
++    const uint8_t* ptr;
++    const uint64_t* buf64 = (uint64_t *)data;
++    size_t remaining = len;
++
++    if (pmull_runtime_flag) {
++#ifdef HAVE_ARM64_CRYPTO
++        while (remaining >= k1024ByteThreshold) {
++            uint32_t crc0 = 0, crc1 = 0, crc2 = 0;
++            uint64_t t0, t1;
++
++            PREF1KL1((uint8_t *)buf64, k1024ByteThreshold);
++
++            // 首8字节初始化
++            crc0 = crc32c_u64(crc, *buf64++);
++
++            CRC32C7X24BYTES(0);
++            CRC32C7X24BYTES(1);
++            CRC32C7X24BYTES(2);
++            CRC32C7X24BYTES(3);
++            CRC32C7X24BYTES(4);
++            CRC32C7X24BYTES(5);
++            buf64 += 3 * kParallelBlockLength;
++
++            // 尾8字节计算
++            crc = crc32c_u64(crc2, *buf64++);
++
++            // PMULL合并3路CRC结果
++            t0 = static_cast<uint64_t>(vmull_p64(crc0, kPMULLMergeK0));
++            t1 = static_cast<uint64_t>(vmull_p64(crc1, kPMULLMergeK1));
++            crc ^= crc32c_u64(0, t1);
++            crc ^= crc32c_u64(0, t0);
++
++            // 更新剩余字节数
++            remaining -= k1024ByteThreshold;
++        }
++
++        if (remaining == 0) return crc ^ (0xffffffffU);
++#endif
++    }
++
++    ptr = (const uint8_t *)buf64;
++    while (remaining >= 8) {
++        crc = crc32c_u64(crc, *(const uint64_t *)ptr);
++        ptr += 8;
++        remaining -= 8;
++    }
++
++    if (remaining >= 4) {
++        crc = crc32c_u32(crc, *(const uint32_t *)ptr);
++        ptr += 4;
++        remaining -= 4;
++    }
++
++    if (remaining >= 2) {
++        crc = crc32c_u16(crc, *(const uint16_t *)ptr);
++        ptr += 2;
++        remaining -= 2;
++    }
++
++    if (remaining) crc = crc32c_u8(crc, *ptr);
++    crc ^= 0xffffffff;
++    return crc;
++}
++
++#endif
+\ No newline at end of file
+diff --git a/util/crc32c_arm64.h b/util/crc32c_arm64.h
+new file mode 100644
+index 000000000..7ca8fe384
+--- /dev/null
++++ b/util/crc32c_arm64.h
+@@ -0,0 +1,46 @@
++#ifndef CRC32C_ARM64_H
++#define CRC32C_ARM64_H
++
++#include <cinttypes>
++#include <cstddef>
++
++#if defined(__aarch64__) || defined(__AARCH64__)
++#ifdef __ARM_FEATURE_CRC32
++
++#define HAVE_ARM64_CRC
++#include <arm_acle.h>
++
++#define crc32c_u8(crc, v) __crc32cb(crc, v)
++#define crc32c_u16(crc, v) __crc32ch(crc, v)
++#define crc32c_u32(crc, v) __crc32cw(crc, v)
++#define crc32c_u64(crc, v) __crc32cd(crc, v)
++
++#define PREF_SINGLE(buffer, offset)                             \
++    __asm__("PRFM PLDL1KEEP, [%x[v],%[c]]" ::[v] "r"(buffer),   \
++            [c] "I"(offset));
++
++#define PREF4X64L1(buffer, PREF_OFFSET, ITR)                \
++    PREF_SINGLE(buffer, (PREF_OFFSET) + ((ITR) + 0) * 64);  \
++    PREF_SINGLE(buffer, (PREF_OFFSET) + ((ITR) + 1) * 64);  \
++    PREF_SINGLE(buffer, (PREF_OFFSET) + ((ITR) + 2) * 64);  \
++    PREF_SINGLE(buffer, (PREF_OFFSET) + ((ITR) + 3) * 64);
++
++#define PREF1KL1(buffer, PREF_OFFSET)       \
++    PREF4X64L1(buffer, (PREF_OFFSET), 0)    \
++    PREF4X64L1(buffer, (PREF_OFFSET), 4)    \
++    PREF4X64L1(buffer, (PREF_OFFSET), 8)    \
++    PREF4X64L1(buffer, (PREF_OFFSET), 12)
++
++extern uint32_t crc32c_arm64(uint32_t crc, unsigned char const *data,
++                             size_t len);
++extern uint32_t crc32c_check(void);
++extern bool crc32c_pmull_check(void);
++
++#ifdef __ARM_FEATURE_CRYPTO
++#define HAVE_ARM64_CRYPTO
++#include <arm_neon.h>
++#endif
++#endif
++#endif  // defined(__aarch64__) || defined(__AARCH64__)
++
++#endif  // CRC32C_ARM64_H
+\ No newline at end of file
+diff --git a/util/crc32c_asm.h b/util/crc32c_asm.h
+new file mode 100644
+index 000000000..7d6ad4e1e
+--- /dev/null
++++ b/util/crc32c_asm.h
+@@ -0,0 +1,21 @@
++#ifndef ROCKSDB_UTIL_CRC32C_ASM_H
++#define ROCKSDB_UTIL_CRC32C_ASM_H
++
++#include <stdint.h>
++#include <stddef.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// 汇编函数声明
++
++uint32_t crc32_iscsi_sve2(const char *BUF,uint64_t LEN,uint32_t wCRC);
++
++uint32_t crc32_iscsi_crc_ext(const char *BUF,uint64_t LEN,uint32_t wCRC);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  // ROCKSDB_UTIL_CRC32C_ASM_H
+\ No newline at end of file
