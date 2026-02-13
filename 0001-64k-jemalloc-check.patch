@@ -1,0 +1,27 @@
+diff --git a/Makefile b/Makefile
+index eee0f9fba..83f09827c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -290,6 +290,22 @@ ifndef DISABLE_JEMALLOC
+ 	EXEC_LDFLAGS := $(JEMALLOC_LIB) $(EXEC_LDFLAGS)
+ 	PLATFORM_CXXFLAGS += $(JEMALLOC_INCLUDE)
+ 	PLATFORM_CCFLAGS += $(JEMALLOC_INCLUDE)
++	ifndef DISABLE_JEMALLOC_PAGE_CHECK
++		SYSTEM_PAGESIZE := $(shell getconf PAGESIZE)
++		SYSTEM_LG_PAGE := $(shell echo "l($(SYSTEM_PAGESIZE))/l(2)" | bc -l | xargs printf "%.0f")
++
++		JEMALLOC_PAGE_SIZE := $(shell set -e; printf '%s\n' '#include <stdio.h>' '#include <stdlib.h>' '#include <jemalloc/jemalloc.h>' 'int main() { size_t page_size = 0; size_t sz = sizeof(page_size); if (mallctl("arenas.page", &page_size, &sz, NULL, 0) == 0 && page_size > 0) { printf("%zu\n", page_size); return 0; } else { return 1; } }' | $(CC) $(CFLAGS) $(PLATFORM_CCFLAGS) $(JEMALLOC_INCLUDE) -DJEMALLOC_NO_DEMANGLE -x c - -o /tmp/check_page $(JEMALLOC_LIB) -ljemalloc 2>/dev/null && /tmp/check_page 2>/dev/null; rm -f /tmp/check_page 2>/dev/null; if [ $$? -ne 0 ]; then echo 4096; fi)
++
++		JEMALLOC_LG_PAGE := $(shell set -e; printf '%s\n' '#include <stdio.h>' '#include <stdlib.h>' '#include <jemalloc/jemalloc.h>' 'int main() { size_t page_size = 0; size_t sz = sizeof(page_size); if (mallctl("arenas.page", &page_size, &sz, NULL, 0) == 0 && page_size > 0) { size_t lg_page = 0; size_t ps = page_size; while (ps > 1) { lg_page++; ps >>= 1; } printf("%zu\n", lg_page); return 0; } else { return 1; } }' | $(CC) $(CFLAGS) $(PLATFORM_CCFLAGS) $(JEMALLOC_INCLUDE) -DJEMALLOC_NO_DEMANGLE -x c - -o /tmp/check_page $(JEMALLOC_LIB) -ljemalloc 2>/dev/null && /tmp/check_page 2>/dev/null; rm -f /tmp/check_page 2>/dev/null; if [ $$? -ne 0 ]; then echo 12; fi)
++
++		ifneq ($(SYSTEM_LG_PAGE),$(JEMALLOC_LG_PAGE))
++           $(error ERROR: jemalloc PAGESIZE value ($(JEMALLOC_PAGE_SIZE), LG_PAGE=$(JEMALLOC_LG_PAGE)) does not match system PAGESIZE ($(SYSTEM_PAGESIZE), LG_PAGE=$(SYSTEM_LG_PAGE)). Please compile jemalloc with correct --with-lg-page option. If you want to skip the check, you can specify DISABLE_JEMALLOC_PAGE_CHECK at build time.)
++		endif
++
++		ifeq ($(SYSTEM_PAGESIZE),65536)
++			$(warning WARNING: System PAGESIZE is 64K (LG_PAGE=16). It is recommended to compile jemalloc with options: --with-lg-page=16 --with-lg-hugepage=21. If you want to skip the check, you can specify DISABLE_JEMALLOC_PAGE_CHECK at build time.)
++		endif
++	endif
+ endif
+ 
+ export GTEST_THROW_ON_FAILURE=1
