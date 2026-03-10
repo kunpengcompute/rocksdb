@@ -1,0 +1,417 @@
+diff --git a/db/builder.cc b/db/builder.cc
+index a41a8ca4c..eb9822acb 100644
+--- a/db/builder.cc
++++ b/db/builder.cc
+@@ -49,7 +49,7 @@ TableBuilder* NewTableBuilder(
+     WritableFileWriter* file, const CompressionType compression_type,
+     uint64_t sample_for_compression, const CompressionOptions& compression_opts,
+     int level, const bool skip_filters, const uint64_t creation_time,
+-    const uint64_t oldest_key_time, const uint64_t target_file_size) {
++    const uint64_t oldest_key_time, const uint64_t target_file_size, std::shared_ptr<FilterContext> fc) {
+   assert((column_family_id ==
+           TablePropertiesCollectorFactory::Context::kUnknownColumnFamily) ==
+          column_family_name.empty());
+@@ -58,7 +58,7 @@ TableBuilder* NewTableBuilder(
+                           int_tbl_prop_collector_factories, compression_type,
+                           sample_for_compression, compression_opts,
+                           skip_filters, column_family_name, level,
+-                          creation_time, oldest_key_time, target_file_size),
++                          creation_time, oldest_key_time, target_file_size, fc),
+       column_family_id, file);
+ }
+ 
+@@ -80,7 +80,7 @@ Status BuildTable(
+     TableFileCreationReason reason, EventLogger* event_logger, int job_id,
+     const Env::IOPriority io_priority, TableProperties* table_properties,
+     int level, const uint64_t creation_time, const uint64_t oldest_key_time,
+-    Env::WriteLifeTimeHint write_hint) {
++    Env::WriteLifeTimeHint write_hint, ColumnFamilyData* cfd) {
+   assert((column_family_id ==
+           TablePropertiesCollectorFactory::Context::kUnknownColumnFamily) ==
+          column_family_name.empty());
+@@ -130,12 +130,36 @@ Status BuildTable(
+       file_writer.reset(
+           new WritableFileWriter(std::move(file), fname, env_options, env,
+                                  ioptions.statistics, ioptions.listeners));
+-      builder = NewTableBuilder(
+-          ioptions, mutable_cf_options, internal_comparator,
+-          int_tbl_prop_collector_factories, column_family_id,
+-          column_family_name, file_writer.get(), compression,
+-          sample_for_compression, compression_opts_for_flush, level,
+-          false /* skip_filters */, creation_time, oldest_key_time);
++      
++      if (cfd) {
++        const VersionStorageInfo* vstorage = cfd->current()->storage_info();
++        int current_max_level = vstorage->num_non_empty_levels();
++
++        std::shared_ptr<FilterContext> fc = std::make_shared<FilterContext>();
++        fc->current_level = level;
++        fc->current_max_level = current_max_level;
++        fc->size_ratio = mutable_cf_options.max_bytes_for_level_multiplier;
++        fc->num_levels = ioptions.num_levels;
++        fc->max_bytes_for_level_base = mutable_cf_options.max_bytes_for_level_base;
++        fc->ln_size = vstorage->NumLevelFiles(ioptions.num_levels - 1);
++        fc->info_log = ioptions.info_log;
++        fc->optimize_filters_for_hits = ioptions.optimize_filters_for_hits;
++        fc->target_file_size_base = mutable_cf_options.target_file_size_base;
++
++        builder = NewTableBuilder(
++            ioptions, mutable_cf_options, internal_comparator,
++            int_tbl_prop_collector_factories, column_family_id,
++            column_family_name, file_writer.get(), compression,
++            sample_for_compression, compression_opts_for_flush, level,
++            false /* skip_filters */, creation_time, oldest_key_time, 0 /* target_file_size */, fc);
++      } else {
++        builder = NewTableBuilder(
++            ioptions, mutable_cf_options, internal_comparator,
++            int_tbl_prop_collector_factories, column_family_id,
++            column_family_name, file_writer.get(), compression,
++            sample_for_compression, compression_opts_for_flush, level,
++            false /* skip_filters */, creation_time, oldest_key_time);
++      }
+     }
+ 
+     MergeHelper merge(env, internal_comparator.user_comparator(),
+diff --git a/db/builder.h b/db/builder.h
+index c00c8273c..bd994adf4 100644
+--- a/db/builder.h
++++ b/db/builder.h
+@@ -21,6 +21,8 @@
+ #include "rocksdb/types.h"
+ #include "table/scoped_arena_iterator.h"
+ #include "util/event_logger.h"
++#include "db/column_family.h"
++#include "rocksdb/filter_policy.h"
+ 
+ namespace rocksdb {
+ 
+@@ -50,7 +52,7 @@ TableBuilder* NewTableBuilder(
+     const uint64_t sample_for_compression,
+     const CompressionOptions& compression_opts, int level,
+     const bool skip_filters = false, const uint64_t creation_time = 0,
+-    const uint64_t oldest_key_time = 0, const uint64_t target_file_size = 0);
++    const uint64_t oldest_key_time = 0, const uint64_t target_file_size = 0, std::shared_ptr<FilterContext> fc = nullptr);
+ 
+ // Build a Table file from the contents of *iter.  The generated file
+ // will be named according to number specified in meta. On success, the rest of
+@@ -80,6 +82,6 @@ extern Status BuildTable(
+     const Env::IOPriority io_priority = Env::IO_HIGH,
+     TableProperties* table_properties = nullptr, int level = -1,
+     const uint64_t creation_time = 0, const uint64_t oldest_key_time = 0,
+-    Env::WriteLifeTimeHint write_hint = Env::WLTH_NOT_SET);
++    Env::WriteLifeTimeHint write_hint = Env::WLTH_NOT_SET, ColumnFamilyData* cfd = nullptr);
+ 
+ }  // namespace rocksdb
+diff --git a/db/compaction_job.cc b/db/compaction_job.cc
+index 65e9719a3..f165ebf24 100644
+--- a/db/compaction_job.cc
++++ b/db/compaction_job.cc
+@@ -62,6 +62,7 @@
+ #include "util/stop_watch.h"
+ #include "util/string_util.h"
+ #include "util/sync_point.h"
++#include "rocksdb/filter_policy.h"
+ 
+ namespace rocksdb {
+ 
+@@ -1496,6 +1497,21 @@ Status CompactionJob::OpenCompactionOutputFile(
+     output_file_creation_time = static_cast<uint64_t>(_current_time);
+   }
+ 
++  auto mutable_cf_options = sub_compact->compaction->mutable_cf_options();
++  auto ioptions = sub_compact->compaction->immutable_cf_options();
++  const VersionStorageInfo* vstorage = cfd->current()->storage_info();
++  int current_max_level = vstorage->num_non_empty_levels();
++  std::shared_ptr<FilterContext> fc = std::make_shared<FilterContext>();
++  fc->current_level = sub_compact->compaction->output_level();
++  fc->current_max_level = current_max_level;
++  fc->size_ratio = mutable_cf_options->max_bytes_for_level_multiplier;
++  fc->num_levels = ioptions->num_levels;
++  fc->max_bytes_for_level_base = mutable_cf_options->max_bytes_for_level_base;
++  fc->ln_size = vstorage->NumLevelFiles(ioptions->num_levels - 1);
++  fc->info_log = ioptions->info_log;
++  fc->optimize_filters_for_hits = ioptions->optimize_filters_for_hits;
++  fc->target_file_size_base = mutable_cf_options->target_file_size_base;
++
+   sub_compact->builder.reset(NewTableBuilder(
+       *cfd->ioptions(), *(sub_compact->compaction->mutable_cf_options()),
+       cfd->internal_comparator(), cfd->int_tbl_prop_collector_factories(),
+@@ -1505,7 +1521,7 @@ Status CompactionJob::OpenCompactionOutputFile(
+       sub_compact->compaction->output_compression_opts(),
+       sub_compact->compaction->output_level(), skip_filters,
+       output_file_creation_time, 0 /* oldest_key_time */,
+-      sub_compact->compaction->max_output_file_size()));
++      sub_compact->compaction->max_output_file_size(), fc));
+   LogFlush(db_options_.info_log);
+   return s;
+ }
+diff --git a/db/flush_job.cc b/db/flush_job.cc
+index f03188141..a750cf534 100644
+--- a/db/flush_job.cc
++++ b/db/flush_job.cc
+@@ -379,7 +379,7 @@ Status FlushJob::WriteLevel0Table() {
+           mutable_cf_options_.paranoid_file_checks, cfd_->internal_stats(),
+           TableFileCreationReason::kFlush, event_logger_, job_context_->job_id,
+           Env::IO_HIGH, &table_properties_, 0 /* level */, current_time,
+-          oldest_key_time, write_hint);
++          oldest_key_time, write_hint, cfd_);
+       LogFlush(db_options_.info_log);
+     }
+     ROCKS_LOG_INFO(db_options_.info_log,
+diff --git a/include/rocksdb/filter_policy.h b/include/rocksdb/filter_policy.h
+index 5d465b782..90655c25b 100644
+--- a/include/rocksdb/filter_policy.h
++++ b/include/rocksdb/filter_policy.h
+@@ -24,11 +24,25 @@
+ #include <stdexcept>
+ #include <string>
+ #include <vector>
++#include "rocksdb/env.h"
+ 
+ namespace rocksdb {
+ 
+ class Slice;
+ 
++struct FilterContext {
++  bool optimize_filters_for_hits;
++  int current_level;
++  int current_max_level;
++  int num_levels;
++  int level0_file_num_compaction_trigger;
++  uint64_t max_bytes_for_level_base;
++  double size_ratio;
++  int ln_size;
++  uint64_t target_file_size_base;
++  Logger* info_log;
++};
++
+ // A class that takes a bunch of keys, then generates filter
+ class FilterBitsBuilder {
+  public:
+@@ -116,6 +130,11 @@ class FilterPolicy {
+   // It contains interface to take individual key, then generate filter
+   virtual FilterBitsBuilder* GetFilterBitsBuilder() const { return nullptr; }
+ 
++  virtual FilterBitsBuilder* GetFilterBitsBuilder(std::shared_ptr<FilterContext> fc) const {
++    (void) fc.get();
++    return nullptr;
++  }
++
+   // Get the FilterBitsReader, which is ONLY used for full filter block
+   // It contains interface to tell if key can be in filter
+   // The input slice should NOT be deleted by FilterPolicy
+diff --git a/table/block_based_table_builder.cc b/table/block_based_table_builder.cc
+index 479311f5b..ee54f151d 100644
+--- a/table/block_based_table_builder.cc
++++ b/table/block_based_table_builder.cc
+@@ -65,11 +65,11 @@ FilterBlockBuilder* CreateFilterBlockBuilder(
+     const ImmutableCFOptions& /*opt*/, const MutableCFOptions& mopt,
+     const BlockBasedTableOptions& table_opt,
+     const bool use_delta_encoding_for_index_values,
+-    PartitionedIndexBuilder* const p_index_builder) {
++    PartitionedIndexBuilder* const p_index_builder, std::shared_ptr<FilterContext> fc = nullptr) {
+   if (table_opt.filter_policy == nullptr) return nullptr;
+ 
+   FilterBitsBuilder* filter_bits_builder =
+-      table_opt.filter_policy->GetFilterBitsBuilder();
++      table_opt.filter_policy->GetFilterBitsBuilder(fc);
+   if (filter_bits_builder == nullptr) {
+     return new BlockBasedFilterBlockBuilder(mopt.prefix_extractor.get(),
+                                             table_opt);
+@@ -364,7 +364,8 @@ struct BlockBasedTableBuilder::Rep {
+       const uint64_t _sample_for_compression,
+       const CompressionOptions& _compression_opts, const bool skip_filters,
+       const std::string& _column_family_name, const uint64_t _creation_time,
+-      const uint64_t _oldest_key_time, const uint64_t _target_file_size)
++      const uint64_t _oldest_key_time, const uint64_t _target_file_size,
++      std::shared_ptr<FilterContext> fc = nullptr)
+       : ioptions(_ioptions),
+         moptions(_moptions),
+         table_options(table_opt),
+@@ -419,7 +420,7 @@ struct BlockBasedTableBuilder::Rep {
+     } else {
+       filter_builder.reset(CreateFilterBlockBuilder(
+           _ioptions, _moptions, table_options,
+-          use_delta_encoding_for_index_values, p_index_builder_));
++          use_delta_encoding_for_index_values, p_index_builder_, fc));
+     }
+ 
+     for (auto& collector_factories : *int_tbl_prop_collector_factories) {
+@@ -453,7 +454,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
+     const uint64_t sample_for_compression,
+     const CompressionOptions& compression_opts, const bool skip_filters,
+     const std::string& column_family_name, const uint64_t creation_time,
+-    const uint64_t oldest_key_time, const uint64_t target_file_size) {
++    const uint64_t oldest_key_time, const uint64_t target_file_size, std::shared_ptr<FilterContext> fc) {
+   BlockBasedTableOptions sanitized_table_options(table_options);
+   if (sanitized_table_options.format_version == 0 &&
+       sanitized_table_options.checksum != kCRC32c) {
+@@ -470,7 +471,7 @@ BlockBasedTableBuilder::BlockBasedTableBuilder(
+       ioptions, moptions, sanitized_table_options, internal_comparator,
+       int_tbl_prop_collector_factories, column_family_id, file,
+       compression_type, sample_for_compression, compression_opts, skip_filters,
+-      column_family_name, creation_time, oldest_key_time, target_file_size);
++      column_family_name, creation_time, oldest_key_time, target_file_size, fc);
+ 
+   if (rep_->filter_builder != nullptr) {
+     rep_->filter_builder->StartBlock(0);
+diff --git a/table/block_based_table_builder.h b/table/block_based_table_builder.h
+index b10494e7b..cefab5350 100644
+--- a/table/block_based_table_builder.h
++++ b/table/block_based_table_builder.h
+@@ -21,6 +21,7 @@
+ #include "table/meta_blocks.h"
+ #include "table/table_builder.h"
+ #include "util/compression.h"
++#include "rocksdb/filter_policy.h"
+ 
+ namespace rocksdb {
+ 
+@@ -48,7 +49,8 @@ class BlockBasedTableBuilder : public TableBuilder {
+       const uint64_t sample_for_compression,
+       const CompressionOptions& compression_opts, const bool skip_filters,
+       const std::string& column_family_name, const uint64_t creation_time = 0,
+-      const uint64_t oldest_key_time = 0, const uint64_t target_file_size = 0);
++      const uint64_t oldest_key_time = 0, const uint64_t target_file_size = 0,
++      std::shared_ptr<FilterContext> fc = nullptr);
+ 
+   // REQUIRES: Either Finish() or Abandon() has been called.
+   ~BlockBasedTableBuilder();
+diff --git a/table/block_based_table_factory.cc b/table/block_based_table_factory.cc
+index cda8d1e27..a3c6377e2 100644
+--- a/table/block_based_table_factory.cc
++++ b/table/block_based_table_factory.cc
+@@ -220,7 +220,8 @@ TableBuilder* BlockBasedTableFactory::NewTableBuilder(
+       table_builder_options.column_family_name,
+       table_builder_options.creation_time,
+       table_builder_options.oldest_key_time,
+-      table_builder_options.target_file_size);
++      table_builder_options.target_file_size,
++      table_builder_options.fc);
+ 
+   return table_builder;
+ }
+diff --git a/table/table_builder.h b/table/table_builder.h
+index 20d9a55f2..6f9677e76 100644
+--- a/table/table_builder.h
++++ b/table/table_builder.h
+@@ -19,6 +19,7 @@
+ #include "rocksdb/options.h"
+ #include "rocksdb/table_properties.h"
+ #include "util/file_reader_writer.h"
++#include "rocksdb/filter_policy.h"
+ 
+ namespace rocksdb {
+ 
+@@ -77,7 +78,7 @@ struct TableBuilderOptions {
+       const CompressionOptions& _compression_opts, bool _skip_filters,
+       const std::string& _column_family_name, int _level,
+       const uint64_t _creation_time = 0, const int64_t _oldest_key_time = 0,
+-      const uint64_t _target_file_size = 0)
++      const uint64_t _target_file_size = 0, std::shared_ptr<FilterContext> _fc = nullptr)
+       : ioptions(_ioptions),
+         moptions(_moptions),
+         internal_comparator(_internal_comparator),
+@@ -90,7 +91,8 @@ struct TableBuilderOptions {
+         level(_level),
+         creation_time(_creation_time),
+         oldest_key_time(_oldest_key_time),
+-        target_file_size(_target_file_size) {}
++        target_file_size(_target_file_size),
++        fc(_fc) {}
+   const ImmutableCFOptions& ioptions;
+   const MutableCFOptions& moptions;
+   const InternalKeyComparator& internal_comparator;
+@@ -105,6 +107,7 @@ struct TableBuilderOptions {
+   const uint64_t creation_time;
+   const int64_t oldest_key_time;
+   const uint64_t target_file_size;
++  std::shared_ptr<FilterContext> fc;
+ };
+ 
+ // TableBuilder provides the interface used to build a Table
+diff --git a/util/bloom.cc b/util/bloom.cc
+index 9c05f7107..aa8706560 100644
+--- a/util/bloom.cc
++++ b/util/bloom.cc
+@@ -340,6 +340,80 @@ class BloomFilterPolicy : public FilterPolicy {
+     return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
+   }
+ 
++  FilterBitsBuilder* GetFilterBitsBuilder(std::shared_ptr<FilterContext> fc) const override {
++    if (use_block_based_builder_) {
++      return nullptr;
++    }
++
++    if (!fc) {
++      return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
++    }
++
++    if (fc->optimize_filters_for_hits && fc->num_levels <= 2) {
++      return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
++    }
++
++    if (fc->num_levels < 2) {
++      return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
++    }
++
++    if (fc->current_level != -1 && fc->size_ratio >= 1.0) {
++      int current_max_level = fc->current_max_level;
++      int level_at_creation = fc->current_level;
++      int millibits_per_key = bits_per_key_ * 1000;  // default bits_per_key_
++      int result_bits_per_key_ = bits_per_key_;
++      current_max_level = current_max_level <= level_at_creation ? level_at_creation + 1 : current_max_level;
++
++      assert(fc->num_levels > 0);
++      std::vector<int> level_size(fc->num_levels);
++      
++      level_size[0] = fc->level0_file_num_compaction_trigger / 2;
++      level_size[0] = std::max(level_size[0], 1);
++
++      for (int i = 1; i < fc->num_levels; i++) {
++        level_size[i] = fc->max_bytes_for_level_base * std::pow(fc->size_ratio, i - 1) / fc->target_file_size_base;
++        level_size[i] = std::max(level_size[i], 1);
++      }
++
++      level_size[fc->num_levels - 1] = std::max(level_size[fc->num_levels - 1], fc->ln_size);
++
++      std::vector<double> diff;
++
++      int calculated_level = (fc->optimize_filters_for_hits && current_max_level == fc->num_levels) ? current_max_level - 1 : current_max_level;
++
++      for (int i = 1; i < calculated_level; i++) {
++        double diff_with_l0 = std::log(1.0 * level_size[i] / level_size[0]) / 0.69 / 0.69 * 1000;
++        diff.push_back(diff_with_l0);
++      }
++
++      double left_item_sum = level_size[0];
++      double right_item_sum = millibits_per_key * level_size[0];
++
++      for (int i = 1; i < calculated_level; i++) {
++        left_item_sum += level_size[i];
++        right_item_sum += (millibits_per_key + diff[i - 1]) * level_size[i];
++      }
++
++      int new_millibits_per_key = right_item_sum / left_item_sum; // base (Level 0)
++
++      if (level_at_creation > 0) {
++        new_millibits_per_key = new_millibits_per_key - diff[level_at_creation - 1];  // current level
++      }
++
++      if (new_millibits_per_key < 1000) {
++        new_millibits_per_key = 1000;
++      } else if (new_millibits_per_key > 100000) {
++        new_millibits_per_key = 100000;
++      }
++
++      result_bits_per_key_ = new_millibits_per_key / 1000;
++
++      return new FullFilterBitsBuilder(result_bits_per_key_, num_probes_);
++    }
++
++    return new FullFilterBitsBuilder(bits_per_key_, num_probes_);
++  }
++
+   FilterBitsReader* GetFilterBitsReader(const Slice& contents) const override {
+     return new FullFilterBitsReader(contents);
+   }
