@@ -71,8 +71,8 @@ Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 a
 |RocksDB|6.1.2|[获取链接](https://github.com/facebook/rocksdb/tree/v6.1.2)|
 |GCC|10.3.1|openEuler 22.03 LTS SP4版本自带|
 |Java|1.8.0|在openEuler 22.03 LTS SP4系统上，确保网络畅通情况下，利用Yum工具直接安装|
-|patch文件|0001-crc32c-sve2-arm64-combined.patch|获取链接|
-|patch文件|0002-filter_opt_6_1_2_final.patch|获取链接|
+|patch文件|0001-crc32c-sve2-arm64-combined.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
+|patch文件|0002-filter_opt_6_1_2_final.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0002-filter_opt_6_1_2_final.patch)|
 
 
 ## 安装和使用特性<a name="ZH-CN_TOPIC_0000002543719151"></a>
