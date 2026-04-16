@@ -1,10 +1,10 @@
-# RocksDB proxy网络多路径及自适应连接数优化 特性指南<a name="ZH-CN_TOPIC_0000002553653073"></a>
+# RocksDB proxy网络多路径及自适应连接数优化 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
 ### 简介<a name="ZH-CN_TOPIC_0000002543640185"></a>
 
-本文主要介绍如何在使用openEuler操作系统的鲲鹏920新型号处理器上搭建使能环境，使能RocksDB proxy（Kvrocks）网络多路径特性，测试性能。
+本文主要介绍如何在使用openEuler操作系统的鲲鹏920新型号处理器上搭建使能环境，使能RocksDB proxy（Kvrocks）网络多路径特性和测试性能。
 
 ### 原理描述<a name="ZH-CN_TOPIC_0000002543720175"></a>
 
@@ -20,7 +20,7 @@ RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照
 
 ### 应用场景<a name="ZH-CN_TOPIC_0000002543640187"></a>
 
-- 网络多路径特性适用于业务网络占比较高的物理机或者容器场景，可将业务进程网络请求与网络中断NUMA亲和调度，提高访存效率，有效提升业务性能。
+网络多路径特性适用于业务网络占比较高的物理机或者容器场景，可将业务进程网络请求与网络中断NUMA亲和调度，提高访存效率，有效提升业务性能。
 
 ## 搭建环境<a name="ZH-CN_TOPIC_0000002512280240"></a>
 
@@ -41,12 +41,12 @@ RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照
 |--|--|--|
 |操作系统|openEuler 22.03 LTS SP4 for ARM|[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)|
 |Kvrocks|2.2.0|[获取链接](https://github.com/apache/kvrocks/archive/refs/tags/v2.2.0.zip)|
-|网络多路径亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。<br><br>内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。|
+|网络多路径亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。<br>内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
->特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。
->如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。
->如果OS环境为非openEuler内核，需要针对性适配网络多路径特性。
+> - 特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。
+> - 如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。
+> - 如果OS环境为非openEuler内核，需要针对性适配网络多路径特性。
 
 ### 替换内核<a name="ZH-CN_TOPIC_0000002512280242"></a>
 
@@ -94,17 +94,17 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 2. 进入服务器管理平台iBMC。
 
-    **图 1** 进入服务器管理平台iBMC<a name="fig0000000000000001"></a><a id="进入服务器管理平台iBMC"></a>
+    **图 1** 进入服务器管理平台iBMC<a name="fig0000000000000001"></a><a id="进入服务器管理平台iBMC"></a><br>
     ![](./figures/zh-cn_image_0000002371673808.png)
     
 3. 进入虚拟控制台。
 
-    **图 2** 进入虚拟控制台<a name="fig0000000000000002"></a><a id="进入虚拟控制台"></a>
+    **图 2** 进入虚拟控制台<a name="fig0000000000000002"></a><a id="进入虚拟控制台"></a><br>
     ![](./figures/zh-cn_image_0000002430608949.png)
 
 4. 强制重启。
 
-    **图 3** 强制重启<a name="fig0000000000000003"></a><a id="强制重启"></a>
+    **图 3** 强制重启<a name="fig0000000000000003"></a><a id="强制重启"></a><br>
     ![](./figures/zh-cn_image_0000002430569449.png)
 
 5. 选择网络多路径亲和内核后等待重启完成。
@@ -251,13 +251,13 @@ RocksDB proxy网络多路径特性针对Kvrocks 2.2版本和RocksDB 6.26.1版本
 
 YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器进行基础测试的工具，其内部涵盖了常见的NoSQL数据库产品，如Cassandra、MongoDB、HBase、Redis等。在运行YCSB的时候，可以配置不同的workload和DB，也可以指定线程数和并发数等其他参数。
 
-1. 安装依赖包
+1. 安装依赖包。
 
     ```shell
     yum install python java maven -y
     ```
 
-2. 下载源码包
+2. 下载源码包。
 
     ```shell
     cd /home
@@ -266,7 +266,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
     git checkout 19e885f7cb780fdded0547853f7810a150554caf
     ```
 
-3. 代理配置（可选）
+3. （可选）代理配置。
 
     若是无法连通maven链接进行下载，可以配置代理。
 
@@ -341,7 +341,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
     修改其中的IP地址和端口号。
 
-4. 编译
+4. 编译。
 
     ```shell
     mvn -pl site.ycsb:redis-binding -am clean package
@@ -351,15 +351,15 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 1. 网络多路径使能。
 
-    1. 根据[**使能特性**](#使能特性)一章内容，执行到解压oenetcls.ko那一步。
-    2. 手动将网络中断号绑定到每个numa的后16个核上，一个cpu核一个中断号，防止与Kvrocks实例争抢cpu资源。
+    1. 根据[**使能特性**](#使能特性)章节配置基础环境，使能网络多路径特性（仅执行步骤1~步骤3 解压oenetcls.ko即可）。
+    2. 手动将网络中断号绑定到每个numa的后16个核上，一个cpu核一个中断号，防止与Kvrocks实例争抢CPU资源。
     3. 启用网络多路径特性。
 
         ```shell
         insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko mode=1 appname="kvrocks" ifname="网卡名称" strategy=3 debug=0 match_ip_flag=0 irqname="网卡名称" rxq_multiplex_limit=4 lo_rps_policy=2 rps_policy=2
         ```
         
-        若是使能成功，在启动Kvrocks进程后，执行以下命令，能查看网卡是否成功启用网络多路径特性。
+        若是使能成功，在启动Kvrocks进程后，执行以下命令，可查看网卡是否成功启用网络多路径特性。
         
         ```shell
         ethtool -u 网卡名称
@@ -371,7 +371,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
     半整机多实例场景下，每个Kvrocks需要绑定16个cpu核和对应numa的内存，于是每个numa有两个Kvrocks实例，整机需部署8个Kvrocks实例。每个实例启动都需要不同的配置文件“kvrocks.conf”。其中workers参数统一设置成16，port和dir两个参数根据实例的不同设置为不同的值。最后，启动8个Kvrocks实例。
 
-3. 使用YCSB进行压测
+3. 使用YCSB进行压测。
 
     进入YCSB根目录，为每个ycsb工具平均分配相同的cpu核进行压测。以下以单实例为例给定各个场景的测试命令。
 
@@ -422,18 +422,18 @@ ethtool -k 网卡名 |grep filters
 
 - 若输出结果包含ntuple-filters，没有标识[fixed]，则网卡支持FDIR。
 
-    **图 4** ntuple-filters支持FDIR输出示例一<a name="fig0000000000000004"></a><a id="ntuple-filters支持FDIR输出示例一"></a>
+    **图 4** ntuple-filters支持FDIR输出示例一<a name="fig0000000000000004"></a><a id="ntuple-filters支持FDIR输出示例一"></a><br>
     ![](./figures/zh-cn_image_0000002522194017.png)
 
-    **图 5** ntuple-filters支持FDIR输出示例二<a name="fig0000000000000005"></a><a id="ntuple-filters支持FDIR输出示例二"></a>
+    **图 5** ntuple-filters支持FDIR输出示例二<a name="fig0000000000000005"></a><a id="ntuple-filters支持FDIR输出示例二"></a><br>
     ![](./figures/zh-cn_image_0000002489834244.png)
     
 - 若输出为ntuple-filters:off[fixed]，或输出为空，则网卡不支持FDIR。
 
-    **图 6** ntuple-filters不支持FDIR输出示例一<a name="fig0000000000000006"></a><a id="ntuple-filters不支持FDIR输出示例一"></a>
+    **图 6** ntuple-filters不支持FDIR输出示例一<a name="fig0000000000000006"></a><a id="ntuple-filters不支持FDIR输出示例一"></a><br>
     ![](./figures/zh-cn_image_0000002522074025.png)
 
-    **图 7** ntuple-filters不支持FDIR输出示例二<a name="fig0000000000000007"></a><a id="ntuple-filters不支持FDIR输出示例二"></a>
+    **图 7** ntuple-filters不支持FDIR输出示例二<a name="fig0000000000000007"></a><a id="ntuple-filters不支持FDIR输出示例二"></a><br>
     ![](./figures/zh-cn_image_0000002489994224.png)
 
 ## 修订记录<a name="ZH-CN_TOPIC_0000002543640188"></a>
