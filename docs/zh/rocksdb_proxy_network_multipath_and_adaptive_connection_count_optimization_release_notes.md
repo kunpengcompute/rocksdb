@@ -1,4 +1,4 @@
-# RocksDB proxy网络多路径及自适应连接数优化 版本说明书<a name="ZH-CN_TOPIC_0000002553533035"></a>
+# RocksDB proxy网络多路径及自适应连接数优化 版本说明书
 
 ## 版本配套说明<a name="ZH-CN_TOPIC_0000002514512236"></a>
 

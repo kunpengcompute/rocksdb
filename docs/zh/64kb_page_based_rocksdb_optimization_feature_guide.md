@@ -1,4 +1,4 @@
-# RocksDB适配64K页优化 特性指南<a name="ZH-CN_TOPIC_0000002553653073"></a>
+# RocksDB适配64K页优化 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
@@ -44,8 +44,7 @@ getconf PAGESIZE
 
 |项目|版本|获取地址|
 |--|--|--|
-|操作系统|openEuler 22.03 LTS SP4|[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)|
-|操作系统|openEuler 24.03 LTS SP3|[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
+|操作系统|openEuler 22.03 LTS SP4、openEuler 24.03 LTS SP3|openEuler 22.03 LTS SP4：[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>openEuler 24.03 LTS SP3：[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
 |RocksDB|6.1.2|[获取链接](https://github.com/facebook/rocksdb/tree/v6.1.2)|
 |GCC|10.3.1|openEuler 22.03 LTS SP4版本自带|
 |Java|1.8.0|在openEuler 22.03 LTS SP4系统上，确保网络畅通情况下，利用Yum工具直接安装|
