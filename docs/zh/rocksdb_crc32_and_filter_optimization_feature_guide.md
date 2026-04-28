@@ -1,4 +1,4 @@
-# RocksDB CRC32及Filter优化 特性指南<a name="ZH-CN_TOPIC_0000002522413126"></a>
+# RocksDB CRC32及Filter优化 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002543719149"></a>
 

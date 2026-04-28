@@ -1,4 +1,4 @@
-# RocksDB CRC32及Filter优化 版本说明书<a name="ZH-CN_TOPIC_0000002522573122"></a>
+# RocksDB CRC32及Filter优化 版本说明书
 
 ## 版本配套说明<a name="ZH-CN_TOPIC_0000002514511878"></a>
 

@@ -1,4 +1,4 @@
-# RocksDB适配64K页优化 特性指南<a name="ZH-CN_TOPIC_0000002553653073"></a>
+# RocksDB适配64K页优化 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
