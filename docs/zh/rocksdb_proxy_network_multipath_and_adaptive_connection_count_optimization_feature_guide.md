@@ -32,21 +32,22 @@ RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照
 
 |项目|规格|
 |--|--|
-|CPU|鲲鹏920新型号处理器|
+|CPU|鲲鹏920新型号处理器、鲲鹏950处理器|
 |网卡|25GE网卡*2|
 
 **表 2** 操作系统和软件要求<a id="操作系统和软件要求"></a>
 
 |项目|版本|获取地址|
 |--|--|--|
-|操作系统|openEuler 22.03 LTS SP4 for ARM|[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)|
+|操作系统|openEuler 22.03 LTS SP4 for ARM<br>openEuler 24.03 LTS SP3 for ARM|[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
 |Kvrocks|2.2.0|[获取链接](https://github.com/apache/kvrocks/archive/refs/tags/v2.2.0.zip)|
-|网络多路径亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。<br>内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。|
+|网络多路径亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
-> - 特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。
-> - 如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。
-> - 如果OS环境为非openEuler内核，需要针对性适配网络多路径特性。
+>后续内容以鲲鹏920新型号处理器、openEuler 22.03 LTS SP4为例进行介绍。
+>特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。
+>如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。
+>如果OS环境为非openEuler内核，需要针对性适配网络多路径特性。
 
 ### 替换内核<a name="ZH-CN_TOPIC_0000002512280242"></a>
 
@@ -164,6 +165,9 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     ```shell
     modprobe hisi_l3t
     ```
+    
+    >![](public_sys-resources/icon-note.gif) **说明：**
+    >若是在24.03 LTS SP3的操作系统中，则不需要另外加载该模块。
 
 3. 解压oenetcls.ko。
 
@@ -224,7 +228,7 @@ RocksDB proxy网络多路径特性针对Kvrocks 2.2版本和RocksDB 6.26.1版本
     具体修改内容如下：
 
     ```cmake
-    FetchContent_DeclareGitHubWithMirror(
+    FetchContent_DeclareGitHubWithMirror(rocksdb
         facebook/rocksdb v6.26.1
         MD5=c16e88e7fb78b6cb8ff58cbc02eaa354
     )
@@ -359,7 +363,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
         insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko mode=1 appname="kvrocks" ifname="网卡名称" strategy=3 debug=0 match_ip_flag=0 irqname="网卡名称" rxq_multiplex_limit=4 lo_rps_policy=2 rps_policy=2
         ```
         
-        若是使能成功，在启动Kvrocks进程后，执行以下命令，可查看网卡是否成功启用网络多路径特性。
+        若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
         
         ```shell
         ethtool -u 网卡名称
@@ -378,19 +382,19 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
     1. 导入500万数据。
 
         ```shell
-        taskset -c 0-15 ./bin/ycsb load redis -s -P ./workloads/workloada -threads 16 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "reocrdcount=5000000" -p "operationcount=0" -p "maxexecutiontime=0" -p "fieldcount=1"
+        taskset -c 0-15 ./bin/ycsb load redis -s -P ./workloads/workloada -threads 16 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=0" -p "fieldcount=1"
         ```
 
     2. QPS，测试300秒的吞吐量。
 
         ```shell
-        taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "reocrdcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 0
+        taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 0
         ```
 
     3. 时延，固定20万QPS测试300秒的时延。
 
         ```shell
-        taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "reocrdcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 200000
+        taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 200000
         ```
 
 ## 恢复环境<a name="ZH-CN_TOPIC_0000002512120267"></a>
