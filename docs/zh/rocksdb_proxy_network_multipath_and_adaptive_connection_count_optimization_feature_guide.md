@@ -108,7 +108,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     **图 3** 强制重启<a name="fig0000000000000003"></a><a id="强制重启"></a><br>
     ![](./figures/zh-cn_image_0000002430569449.png)
 
-5. 选择网络多路径亲和内核后等待重启完成。
+5. 选择RocksDB proxy（Kvrocks）网络多路径特性亲和内核后等待重启完成。
 
 ## 使能特性<a name="ZH-CN_TOPIC_0000002512120260"></a><a id="使能特性"></a>
 
@@ -357,13 +357,13 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
     1. 根据[**使能特性**](#使能特性)章节配置基础环境，使能RocksDB proxy（Kvrocks）网络多路径特性（仅执行步骤1~步骤3 解压oenetcls.ko即可）。
     2. 手动将网络中断号绑定到每个numa的后16个核上，一个cpu核一个中断号，防止与Kvrocks实例争抢CPU资源。
-    3. 启用网络多路径特性。
+    3. 启用RocksDB proxy（Kvrocks）网络多路径特性。
 
         ```shell
         insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko mode=1 appname="kvrocks" ifname="网卡名称" strategy=3 debug=0 match_ip_flag=0 irqname="网卡名称" rxq_multiplex_limit=4 lo_rps_policy=2 rps_policy=2
         ```
         
-        若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
+        若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用RocksDB proxy（Kvrocks）网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
         
         ```shell
         ethtool -u 网卡名称
