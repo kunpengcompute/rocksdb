@@ -1,4 +1,4 @@
-# RocksDB proxy网络多路径及自适应连接数优化 特性指南
+#  RocksDB proxy (Kvrocks) 网络多路径 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
@@ -12,15 +12,15 @@
 
 RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照一定策略绑定到不同NUMA节点的CPU上，同时通过识别特定业务进程的流量特征，将指定业务进程的网络流量优先由当前业务进程所在NUMA上的网卡队列进行接收，从而实现业务进程网络请求与网络中断的亲和性。
 
-此外，当一台服务器上部署多个容器业务时，经常会出现以下两种情况。第一种，容器内部跨Cluster共享数据，同一个容器内的业务分散运行在多个CPU Cluster上，Cluster间Cache同步和跨Cluster访问时延造成业务性能抖动；第二种，容器之间的资源竞争，多个容器业务的任务竞争Cache/内存带宽等资源，造成业务间的相互干扰和资源利用不均衡。上述两点严重影响容器间的性能隔离效果，导致容器间相互干扰，造成容器部署密度无法提升，影响CPU资源的使用率。
+
 
 ### 约束与限制<a name="ZH-CN_TOPIC_0000002543640186"></a>
 
-网络多路径特性需要网卡支持FDIR（Flow Director）功能。具体查询方法请参见[如何查询网卡是否支持FDIR功能](#如何查询网卡是否支持fdir功能)。
+RocksDB proxy（Kvrocks）网络多路径特性需要网卡支持FDIR（Flow Director）功能。具体查询方法请参见[如何查询网卡是否支持FDIR功能](#如何查询网卡是否支持fdir功能)。
 
 ### 应用场景<a name="ZH-CN_TOPIC_0000002543640187"></a>
 
-网络多路径特性适用于业务网络占比较高的物理机或者容器场景，可将业务进程网络请求与网络中断NUMA亲和调度，提高访存效率，有效提升业务性能。
+RocksDB proxy（Kvrocks）网络多路径特性适用于业务网络占比较高的物理机或者容器场景，可将业务进程网络请求与网络中断NUMA亲和调度，提高访存效率，有效提升业务性能。
 
 ## 搭建环境<a name="ZH-CN_TOPIC_0000002512280240"></a>
 
@@ -41,13 +41,13 @@ RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照
 |--|--|--|
 |操作系统|openEuler 22.03 LTS SP4 for ARM<br>openEuler 24.03 LTS SP3 for ARM|[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
 |Kvrocks|2.2.0|[获取链接](https://github.com/apache/kvrocks/archive/refs/tags/v2.2.0.zip)|
-|网络多路径亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
+|RocksDB proxy（Kvrocks）网络多路径特性亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
->后续内容以鲲鹏920新型号处理器、openEuler 22.03 LTS SP4为例进行介绍。
->特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。
->如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。
->如果OS环境为非openEuler内核，需要针对性适配网络多路径特性。
+>- 后续内容以鲲鹏920新型号处理器、openEuler 22.03 LTS SP4为例进行介绍。<br>
+>- 特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。<br>
+>- 如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。<br>
+>- 如果OS环境为非openEuler内核，需要针对性适配RocksDB proxy（Kvrocks）网络多路径特性。
 
 ### 替换内核<a name="ZH-CN_TOPIC_0000002512280242"></a>
 
@@ -108,7 +108,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     **图 3** 强制重启<a name="fig0000000000000003"></a><a id="强制重启"></a><br>
     ![](./figures/zh-cn_image_0000002430569449.png)
 
-5. 选择网络多路径亲和内核后等待重启完成。
+5. 选择RocksDB proxy（Kvrocks）网络多路径特性亲和内核后等待重启完成。
 
 ## 使能特性<a name="ZH-CN_TOPIC_0000002512120260"></a><a id="使能特性"></a>
 
@@ -146,7 +146,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     systemctl stop firewalld
     ```
 
-### 使能网络多路径特性<a name="ZH-CN_TOPIC_0000002512120262"></a>
+### 使能特性<a name="ZH-CN_TOPIC_0000002512120262"></a>
 
 1. 关闭irqbalance。
 
@@ -154,7 +154,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     systemctl stop irqbalance
     ```
 
-2. 网络多路径模块依赖hisi_l3t.ko，需要确认该模块是否已加载。
+2. RocksDB proxy（Kvrocks）网络多路径特性模块依赖hisi_l3t.ko，需要确认该模块是否已加载。
 
     ```shell
     lsmod | grep hisi_l3t
@@ -175,7 +175,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
     unxz /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko.xz
     ```
 
-4. 配置网卡信息，启用网络多路径特性，详细参数说明请参见[表 3](#参数说明)。
+4. 配置网卡信息，启用特性，详细参数说明请参见[表 3](#参数说明)。
 
     ```shell
     insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko ifname="eth1#eth2" strategy=1
@@ -185,22 +185,22 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 | 参数                  | 说明                                                                                                                                                                                            | 必选/可选 |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| ifname              | 生效多路径特性的网卡接口名称。支持输入多接口名，网卡接口名称之间通过#间隔。<br><br>示例值：eth1#eth2，其中eth1、eth2为设备名称。                                                                                                                 | 必选    |
-| strategy            | 中断绑核亲和策略。<br><br>- 0：缺省策略，将网卡队列中断均分到不同NUMA上，不同网卡使用不同核。<br>- 1：Cluster均分策略，将网卡队列中断均分到不同Cluster上。<br>- 2：NUMA均分策略，将网卡队列中断均分到不同NUMA上，与缺省策略的区别是不同网卡可能使用相同核。<br>- 3：用户自定义网卡中断绑核后，加载多路径模块后自动读取中断信息。 | 必选    |
+| ifname              | 生效RocksDB proxy（Kvrocks）网络多路径特性的网卡接口名称。支持输入多接口名，网卡接口名称之间通过#间隔。<br><br>示例值：eth1#eth2，其中eth1、eth2为设备名称。                                                                                                                 | 必选    |
+| strategy            | 中断绑核亲和策略。<br><br>- 0：缺省策略，将网卡队列中断均分到不同NUMA上，不同网卡使用不同核。<br>- 1：Cluster均分策略，将网卡队列中断均分到不同Cluster上。<br>- 2：NUMA均分策略，将网卡队列中断均分到不同NUMA上，与缺省策略的区别是不同网卡可能使用相同核。<br>- 3：用户自定义网卡中断绑核后，加载RocksDB proxy（Kvrocks）网络多路径模块后自动读取中断信息。 | 必选    |
 | debug               | 调试开关。支持动态修改。<br><br>- 0：缺省值，不输出调试日志。<br>- 1：输出调试日志。                                                                                                                                           | 可选    |
 | mode                | 运行模式。<br><br>- 0：缺省值，ntuple模式。<br>- 1：flow模式。                                                                                                                                                 | 可选    |
-| appname             | 生效多路径特性的进程名称。缺省值为redis-server。<br><br>支持输入多进程名，进程名称之间通过#间隔，取值范围为最大64字节的字符串。                                                                                                                   | 可选    |
+| appname             | 生效RocksDB proxy（Kvrocks）网络多路径特性的进程名称。缺省值为redis-server。<br><br>支持输入多进程名，进程名称之间通过#间隔，取值范围为最大64字节的字符串。                                                                                                                   | 可选    |
 | match_ip_flag       | 数据包选择网卡队列时，为避免目的端口冲突，在匹配端口号的基础上，配置是否匹配目的IP地址。支持动态修改。<br><br>- 0：不匹配目的IP地址。<br>- 1：缺省值，匹配目的IP地址。                                                                                               | 可选    |
 | irqname             | 指定使用的网卡中断的通用字符串，用于解析指定网卡的终端名。默认值为comp。<br><br>取值范围为最大64字节的字符串                                                                                                                                 | 可选    |
 | rxq_multiplex_limit | 在配置网卡接收规则时，每个队列可以被多少tcp数据流复用，适用于网卡队列小于tcp流的场景，取值范围为1~64。默认值为1。                                                                                                                                | 可选    |
-| lo_rps_policy       | 本地回环口loopback rps打散开关。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：根据当前流所在numa，将软中断分散在同一个numa内。<br>- 2：根据当前流所在cluster，将软中断分散在同一个cluster内。                    | 可选    |
-| rps_policy          | 网卡口rps打散功能。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：根据当前流所在numa，将软中断分散在同一个numa内。<br>- 2：根据当前流所在cluster，将软中断分散在同一个cluster内。                               | 可选    |
+| lo_rps_policy       | 本地回环口loopback rps打散开关。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：将软中断分散在当前流所在的NUMA节点内。<br>- 2：将软中断分散在当前流所在的cluster节点内内。                    | 可选    |
+| rps_policy          | 网卡口rps打散功能。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：将软中断分散在当前流所在的NUMA节点内。<br>- 2：将软中断分散在当前流所在的cluster节点内。                      | 可选    |
 
 ## 测试性能<a name="ZH-CN_TOPIC_0000002512120263"></a>
 
 ### Kvrocks编译安装<a name="ZH-CN_TOPIC_0000002512120264"></a>
 
-RocksDB proxy网络多路径特性针对Kvrocks 2.2版本和RocksDB 6.26.1版本进行测试。
+RocksDB proxy（Kvrocks）网络多路径特性针对Kvrocks 2.2版本和RocksDB 6.26.1版本进行测试。
 
 1. 安装依赖包。
 
@@ -353,17 +353,17 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 ### 性能测试<a name="ZH-CN_TOPIC_0000002512120266"></a>
 
-1. 网络多路径使能。
+1. 使能RocksDB proxy（Kvrocks）网络多路径特性。
 
-    1. 根据[**使能特性**](#使能特性)章节配置基础环境，使能网络多路径特性（仅执行步骤1~步骤3 解压oenetcls.ko即可）。
+    1. 根据[**使能特性**](#使能特性)章节配置基础环境，使能RocksDB proxy（Kvrocks）网络多路径特性（仅执行步骤1~步骤3 解压oenetcls.ko即可）。
     2. 手动将网络中断号绑定到每个numa的后16个核上，一个cpu核一个中断号，防止与Kvrocks实例争抢CPU资源。
-    3. 启用网络多路径特性。
+    3. 启用RocksDB proxy（Kvrocks）网络多路径特性。
 
         ```shell
         insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko mode=1 appname="kvrocks" ifname="网卡名称" strategy=3 debug=0 match_ip_flag=0 irqname="网卡名称" rxq_multiplex_limit=4 lo_rps_policy=2 rps_policy=2
         ```
         
-        若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
+        若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用RocksDB proxy（Kvrocks）网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
         
         ```shell
         ethtool -u 网卡名称
@@ -399,7 +399,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 ## 恢复环境<a name="ZH-CN_TOPIC_0000002512120267"></a>
 
-### 取消网络多路径特性<a name="ZH-CN_TOPIC_0000002512120268"></a>
+### 取消RocksDB proxy（Kvrocks）网络多路径特性<a name="ZH-CN_TOPIC_0000002512120268"></a>
 
 ```shell
 rmmod oenetcls
