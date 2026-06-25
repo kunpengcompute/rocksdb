@@ -1,4 +1,4 @@
-#  RocksDB proxy (Kvrocks) 网络多路径 特性指南
+# RocksDB proxy (Kvrocks) 网络多路径 特性指南
 
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
@@ -11,8 +11,6 @@
 在互联网业务场景中，一台服务器上通常会部署多个容器业务，每个业务进程通过网络收发业务报文时，网卡中断处理的CPU核与业务进程所在CPU核大多数时候不在相同的NUMA节点，跨NUMA节点的内存访问会导致业务响应时延增加。
 
 RocksDB proxy（Kvrocks）网络多路径特性通过将网卡队列中断按照一定策略绑定到不同NUMA节点的CPU上，同时通过识别特定业务进程的流量特征，将指定业务进程的网络流量优先由当前业务进程所在NUMA上的网卡队列进行接收，从而实现业务进程网络请求与网络中断的亲和性。
-
-
 
 ### 约束与限制<a name="ZH-CN_TOPIC_0000002543640186"></a>
 
@@ -44,6 +42,7 @@ RocksDB proxy（Kvrocks）网络多路径特性适用于业务网络占比较高
 |RocksDB proxy（Kvrocks）网络多路径特性亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
+>
 >- 后续内容以鲲鹏920新型号处理器、openEuler 22.03 LTS SP4为例进行介绍。<br>
 >- 特性支持物理机、容器IPVLAN、容器Host、虚拟机VF网卡直通网络配置场景。<br>
 >- 如果OS环境为openEuler内核，要求内核版本为kernel-5.10.0-301.0.0.204及以上。<br>
