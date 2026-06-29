@@ -26,13 +26,13 @@ RocksDB supports multiple CRC32 implementations and can automatically select the
 
 Check whether the current CPU supports CRC32.
 
-```
+```shell
 lscpu | grep Flags | grep crc32
 ```
 
 If the command output contains `crc32`, the CPU supports CRC32 hardware instructions.
 
-```
+```txt
 Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs sb dcpodp flagm2 frint svei8mm svef32mm svef64mm svebf16 i8mm bf16 dgh rng ecv
 ```
 
@@ -40,7 +40,7 @@ Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 a
 
 The following compilation option needs to be added during compilation:
 
-```
+```txt
 -march=armv8-a+crc
 ```
 
@@ -49,7 +49,6 @@ The following compilation option needs to be added during compilation:
 This feature optimizes the Bloom filter while ensuring the overall balance of the system. In hot data scenarios, the bitmap size of the Bloom filter is dynamically increased to improve the accuracy and reduce the false positive rate. In addition, a proper upper limit is set to prevent excessive memory usage, balancing performance and resource consumption. This optimization significantly improves the query efficiency in hot data access.
 
 In RocksDB, the Bloom filter is used to quickly determine whether a key exists in an SST file, effectively avoiding unnecessary drive I/O. GET operations access the Bloom filter frequently. Therefore, the tradeoff between the accuracy and memory overhead of the Bloom filter is critical. This optimization achieves a better balance between accuracy and memory overhead, significantly improving the throughput in hot data scenarios.
-
 
 ## Verified Environments<a name="EN-US_TOPIC_0000002512279202"></a>
 
@@ -60,7 +59,6 @@ This document provides guidance based on specific environments. Before performin
 |Item|Specifications|
 |--|--|
 |CPU|New Kunpeng 920 processor model or Kunpeng 950 processor|
-
 
 **Table 2** OS and software requirements<a id="os-and-software-requirements"></a>
 
@@ -74,14 +72,13 @@ This document provides guidance based on specific environments. Before performin
 |Patch file|0001-crc32c-sve2-arm64-combined.patch|[Link](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
 |Patch file|0002-filter_opt_6_1_2_final.patch|[Link](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0002-filter_opt_6_1_2_final.patch)|
 
-
 ## Feature Installation and Usage<a name="EN-US_TOPIC_0000002543719151"></a>
 
 The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2 and is provided as patch files. To install and use this feature, apply the patch files to the RocksDB source code and then compile RocksDB.
 
 1. Use `git` to clone RocksDB, select version 6.1.2, and place it in the home directory `~`.
 
-    ```
+    ```shell
     cd ~
     git clone https://github.com/facebook/rocksdb.git
     cd rocksdb/
@@ -90,7 +87,7 @@ The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2
 
 2. Install dependencies using Yum and configure environment variables.
 
-    ```
+    ```shell
     yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
     
     export JAVA_HOME=/usr/lib/jvm/java-1.8.0
@@ -103,7 +100,7 @@ The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2
 
 4. Apply the optimization feature patches. If no command output is displayed, the patches are successfully applied.
 
-    ```
+    ```shell
     cd ~/rocksdb
     git apply --whitespace=nowarn < ~/0001-crc32c-sve2-arm64-combined.patch
     git apply --whitespace=nowarn < ~/0002-filter_opt_6_1_2_final.patch
@@ -113,19 +110,19 @@ The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2
     1. Fix the bug in the source code when the JAR packages and related dynamic libraries are compiled.
         1. Access the path to the native code to be modified.
 
-            ```
+            ```shell
             cd ~/rocksdb
             ```
 
         2. Open the `BlockBasedTableConfig.java` file.
 
-            ```
+            ```shell
             vim java/src/main/java/org/rocksdb/BlockBasedTableConfig.java
             ```
 
         3. Press `i` to enter the insert mode and change `true` to `false` in line 38.
 
-            ```
+            ```txt
             # Change true to false in line 38.
             verifyCompression = false;
             ```
@@ -134,13 +131,13 @@ The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2
 
     2. Compile the JAR packages and related dynamic libraries of RocksDB.
 
-        ```
+        ```txt
         PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
         ```
 
     3. (Optional) If an error is reported during the compilation, indicating that JAR packages are missing, clear the files, manually download the missing JAR packages, and then perform compilation again.
 
-        ```
+        ```shell
         cd ~/rocksdb
         make clean
         mkdir -p java/test-libs
@@ -157,17 +154,15 @@ The RocksDB CRC32 and filter optimization feature is developed for RocksDB 6.1.2
     **Figure 1** Performance comparison before and after the optimization feature is enabled<a name="fig1620685015314"></a><a id="performance-comparison-before-and-after-the-optimization-feature-is-enabled"></a><br>
     ![](figures/en-us_performance_comparison_crc32_and_filter.png "Performance comparison before and after the optimization")
 
-
 ## Security Check and Hardening<a name="EN-US_TOPIC_0000002549283247"></a>
 
 Address space layout randomization (ASLR) is a security technology against buffer overflow. It randomizes the layout of linear areas such as heap, stack, and shared library mapping to make it difficult for attackers to predict target addresses and directly locate code, thereby preventing overflow attacks.
 
-```
+```shell
 echo 2 >/proc/sys/kernel/randomize_va_space
 ```
 
 ![](figures/en-us_image_0000002504021297.png)
-
 
 ## Change History<a name="EN-US_TOPIC_0000002543639155"></a>
 

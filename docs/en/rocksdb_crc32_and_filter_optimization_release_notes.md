@@ -23,7 +23,6 @@
 </tbody>
 </table>
 
-
 ### Software Version Mapping<a name="EN-US_TOPIC_0000002514351960"></a>
 
 |Type|Version|
@@ -31,21 +30,15 @@
 |OS|openEuler 22.03 LTS SP4 or openEuler 24.03 LTS SP3|
 |RocksDB|6.1.2|
 
-
-
 ### Hardware Version Mapping<a name="EN-US_TOPIC_0000002545951819"></a>
 
 |Item|Requirement|
 |--|--|
 |Processor|New Kunpeng 920 processor model or Kunpeng 950 processor|
 
-
-
 ### Virus Scan Results<a name="EN-US_TOPIC_0000002514511882"></a>
 
 Virus scanning is not involved because no software package is released.
-
-
 
 ## v26.0.RC1<a name="EN-US_TOPIC_0000002514511880"></a>
 
@@ -53,17 +46,13 @@ Virus scanning is not involved because no software package is released.
 
 The RocksDB CRC32 and filter optimization feature is added. This feature uses CRC32, pmull hardware instructions, and SVE2 vector instructions to accelerate the verification efficiency, and optimizes the Bloom filter construction method to improve the system performance in high concurrency scenarios. This boosts the overall performance and system stability of RocksDB on Kunpeng servers.
 
-
 ### Resolved Issues<a name="EN-US_TOPIC_0000002545831823"></a>
 
 None
 
-
 ### Known Issues<a name="EN-US_TOPIC_0000002545831819"></a>
 
 None
-
-
 
 ## Related Documentation<a name="EN-US_TOPIC_0000002545831821"></a>
 
@@ -73,8 +62,6 @@ None
 |--|--|--|
 |*Kunpeng BoostKit 26.0.RC1 RocksDB CRC32 and Filter Optimization Release Notes*|Describes the version release and mapping information of the RocksDB CRC32 and filter optimization feature.|Open-source repository|
 |*Kunpeng BoostKit 26.0.RC1 RocksDB CRC32 and Filter Optimization Feature Guide*|Describes the environment requirements and provides guidance on enabling the RocksDB CRC32 and filter optimization feature.|Open-source repository|
-
-
 
 ### Obtaining Documentation<a name="EN-US_TOPIC_0000002514351964"></a>
 

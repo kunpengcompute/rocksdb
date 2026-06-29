@@ -22,12 +22,11 @@ In addition, if the jemalloc memory allocator is enabled during RocksDB compilat
 
 Check the current page size:
 
-```
+```shell
 getconf PAGESIZE
 ```
 
 If `4096` is displayed, the current system uses 4 KB pages and the kernel needs to be recompiled. If `65536` is displayed, the system uses 64 KB pages, indicating that the optimization feature has been enabled.
-
 
 ## Verified Environments<a name="EN-US_TOPIC_0000002512280240"></a>
 
@@ -38,7 +37,6 @@ This document provides guidance based on specific environments. Before performin
 |Item|Specifications|
 |--|--|
 |CPU|New Kunpeng 920 processor model or Kunpeng 950 processor|
-
 
 **Table 2** OS and software requirements<a id="os-and-software-requirements"></a>
 
@@ -51,7 +49,6 @@ This document provides guidance based on specific environments. Before performin
 |Java|1.8.0|Install it using Yum on openEuler 22.03 LTS SP4 when the network connection is normal.|
 |Patch file|0001-64k-jemalloc-check.patch|[Link](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-64k-jemalloc-check.patch)|
 
-
 ## Feature Installation and Usage<a name="EN-US_TOPIC_0000002512120260"></a>
 
 The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2 and is provided in the form of a compiled kernel and patch file. To install and use this feature, you need to recompile the 64 KB page kernel, select the compiled 64 KB page kernel after the OS restart, import the patch file, and then compile RocksDB.
@@ -59,7 +56,7 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 1. Change the page size of the openEuler OS kernel to 64 KB and restart the OS using the kernel with 64 KB page size. For details, see [Changing the Kernel Page Size to 64 KB](https://www.hikunpeng.com/document/detail/en/kunpengdbs/ecosystemEnable/MySQL/kunpengdbstune_05_0012.html) in the *MySQL Tuning Guide*.
 2. Use `git` to clone RocksDB, select version 6.1.2, and place it in the home directory `~`.
 
-    ```
+    ```shell
     cd ~
     git clone https://github.com/facebook/rocksdb.git
     cd rocksdb/
@@ -68,7 +65,7 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 
 3. Install dependencies using Yum and configure environment variables.
 
-    ```
+    ```shell
     yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
     
     export JAVA_HOME=/usr/lib/jvm/java-1.8.0
@@ -78,7 +75,7 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 4. Obtain the patch file of the optimization feature and upload it to the home directory `~`. For details, see [**Table 2**](#os-and-software-requirements).
 5. Apply the optimization feature patch. If no command output is displayed, the patch is successfully applied.
 
-    ```
+    ```shell
     cd ~/rocksdb
     git apply --whitespace=nowarn < ~/0001-64k-jemalloc-check.patch
     ```
@@ -87,14 +84,14 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
     1. Fix the bug in the RocksDB source code when the JAR packages and related dynamic libraries are compiled.
         1. Open the file.
 
-            ```
+            ```shell
             cd ~/rocksdb
             vim java/src/main/java/org/rocksdb/BlockBasedTableConfig.java
             ```
 
         2. Press `i` to enter the insert mode and change `true` to `false` in line 38.
 
-            ```
+            ```shell
             # Change true to false in line 38.
             verifyCompression = false;
             ```
@@ -103,7 +100,7 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 
     2. Compile the JAR packages and related dynamic libraries of RocksDB.
 
-        ```
+        ```txt
         PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
         ```
 
@@ -112,7 +109,7 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 
     3. (Optional) If an error is reported during the compilation, indicating that JAR packages are missing, clear the files, manually download the missing JAR packages, and then perform compilation again.
 
-        ```
+        ```shell
         cd ~/rocksdb
         make clean
         mkdir -p java/test-libs
@@ -133,12 +130,11 @@ The 64 KB page-based RocksDB optimization feature is developed for RocksDB 6.1.2
 
 Address space layout randomization (ASLR) is a security technology against buffer overflow. It randomizes the layout of linear areas such as heap, stack, and shared library mapping to make it difficult for attackers to predict target addresses and directly locate code, thereby preventing overflow attacks.
 
-```
+```shell
 echo 2 >/proc/sys/kernel/randomize_va_space
 ```
 
 ![](figures/en-us_image_0000002504021297.png)
-
 
 ## Change History<a name="EN-US_TOPIC_0000002543640187"></a>
 
