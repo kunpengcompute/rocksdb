@@ -1,64 +1,88 @@
-# Release Notes
+# Release Notes<a name="EN-US_TOPIC_0000002521309484"></a>
 
-## Version Mapping
+## Version Mapping<a name="EN-US_TOPIC_0000002521463536"></a>
 
-### Product Version Information
+### Product Version Information<a name="EN-US_TOPIC_0000002521463606"></a>
 
-| Item  | Requirement               |
-|------|-------------------|
-| Product Name| Kunpeng BoostKit  |
-| Version | 24.0.RC5            |
-| Feature| ISA-L |
+<table><tbody>
+<tr>
+    <th>Product Name</th>
+    <td>Kunpeng BoostKit</td>
+</tr>
+<tr>
+    <th>Product Version</th>
+    <td>25.3.0</td>
+</tr>
+<tr>
+    <th>Feature Name</th>
+    <td>Metadata Acceleration</td>
+</tr>
+</tbody></table>
 
-### Software Versions
+### Software Version Mapping<a name="EN-US_TOPIC_0000002521623612"></a>
 
-| Software Type | Version                     |
-|-------|-------------------------|
-| OS    | openEuler 22.03 LTS SP4 |
-| ISA-L | 2.31.1                  |
+| Software Type   | Version                                                                             |
+|---------|---------------------------------------------------------------------------------|
+| OS      | openEuler 22.03 LTS SP1 <br> openEuler 22.03 LTS SP2 <br> Debian GNU/Linux 10 |
+| RocksDB | 6.1.2 <br> 7.9.2 <br> 8.3.3                                                   |
 
-### Hardware Versions
+### Hardware Version Mapping<a name="EN-US_TOPIC_0000002552663559"></a>
 
-| Item | Requirement               |
-|-----|-------------------|
-| Processor| New Kunpeng 920 processor model or Kunpeng 950 processor|
+| Item | Requirement                                         |
+|-----|---------------------------------------------|
+| Processor| Kunpeng 920<br>New Kunpeng 920 processor model<br>Kunpeng 950|
 
-### Virus Scan Results
+### Virus Scan Results<a name="EN-US_TOPIC_0000002521463602"></a>
 
 Virus scan is not involved because no software package is released.
 
-## v1.0.0
+## v1.1.0<a name="EN-US_TOPIC_0000002521623548"></a>
 
-### Description
+### Change Description<a name="EN-US_TOPIC_0000002552663493"></a>
+
+Added support for ZSTD hardware offload by RocksDB.
+
+### Resolved Issues<a name="EN-US_TOPIC_0000002552623511"></a>
+
+None
+
+### Known Issues<a name="EN-US_TOPIC_0000002521623546"></a>
+
+None
+
+## v1.0.0<a name="EN-US_TOPIC_0000002521623548"></a>
+
+### Change Description<a name="EN-US_TOPIC_0000002552663493"></a>
 
 This is the first official release.
 
-Based on the ISA-L project, this version is optimized based on the hardware features and instructions of the new Kunpeng 920 processor model and Kunpeng 950 processor.
+Based on RocksDB, this feature uses a Huawei-developed algorithm to enable Kunpeng acceleration for better storage performance. This feature fits well with the Kunpeng architecture to optimize read and write hotspots, adjust background tasks (data flushing and compaction) based on service loads, and optimize cache logic based on data hotspots. The main features include memcpy optimization, RocksDB configuration parameter optimization, and CRC32 optimization.
 
-### Resolved Issues
-
-None
-
-### Known Issues
+### Resolved Issues<a name="EN-US_TOPIC_0000002552623511"></a>
 
 None
 
-## Documentation
+### Known Issues<a name="EN-US_TOPIC_0000002521623546"></a>
 
-### Documentation
+None
 
-| Document Name   | Description                | Delivery Method|
-|---------|----------------------|------|
-| Release Notes| Provides the release information about the optimized ISA-L version. | Open-source repository |
-| User Guide | Describes how to test the ISA-L performance.| Open-source repository |
-| Installation Guide | Describes how to compile and install ISA-L.  | Open-source repository |
+## Related Documentation<a name="EN-US_TOPIC_0000002521463604"></a>
 
-### Obtaining Documentation
+### Documentation<a name="EN-US_TOPIC_0000002552623581"></a>
 
-Visit the [open-source repository](https://gitcode.com/boostkit/isa-l) to view or download related documents.
+| Document         | Description               | Delivery Method|
+|---------------|---------------------|------|
+| *Metadata Acceleration Release Notes*| Provides release information about metadata acceleration. | Open-source repository |
+| *Metadata Acceleration Installation Guide* | Describes how to install and deploy metadata acceleration.| Open-source repository |
+
+### Obtaining Documentation<a name="EN-US_TOPIC_0000002521623614"></a>
+
+Visit the [open-source repository](https://gitcode.com/boostkit/rocksdb) to view or download related documents.
 
 ## Change History
 
-| Date | Description      |
+| Date  | Description       |
 |-------|----------|
-| 2026-06-30 | This is the first official release.|
+| 2025-12-30 | This is the third official release. <br> Adapted RocksDB compilation and installation for Debian.|
+| 2024-06-30 | This is the second official release.<br> Supports RocksDB hardware offload.|
+| 2025-12-30 | This is the first official release.|
