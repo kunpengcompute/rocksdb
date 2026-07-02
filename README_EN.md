@@ -9,26 +9,30 @@ RocksDB is a high-performance, persistent, and embedded key-value storage engine
 ## Directory Structure<a name="EN-US_TOPIC_0000002551702481"></a>
 
 ```txt
-├── docs                                    # Project document directory
-│   ├── LICENSE-DOCS                        # Document license agreement
+├── docs                                    # Project documentation
+│   ├── LICENSE                             # Document license
 │   └── en                                  # Document directory
-│       ├── figures                          # Directory of figures in documents
-│       ├── public_sys-resources           # Public resource directory
-│       ├── feature_guide.md               # Feature guide
+│       ├── figures                         # Directory of figures in documents
+│       ├── public_sys-resources            # Public resource directory
+│       ├── installation_guide.md           # Installation guide
 │       └── release_notes.md                # Release notes
-├── 6.1.2-optimization.patch              # Software license agreement
-├── rocksdb-8.3.3-kae_zstd.patch             # Software license agreement
-├── LICENSE                                 # Software license agreement
-└── README.md                        # Introduction
+├── 6.1.2-optimization.patch                # Optimization patch (version 6.1.2)
+├── rocksdb-8.3.3-kae_zstd.patch            # Optimization patch (version 8.3.3)
+├── LICENSE                                 # Software license
+└── README_EN.md                            # Project introduction
 ```
 
 ## Version Description<a name="EN-US_TOPIC_0000002520662482"></a>
 
 For details about the version information, see [Release Notes](docs/en/release_notes.md).
 
+## Environment Deployment<a name="EN-US_TOPIC_0000002520502500"></a>
+
+For environmental requirements, compilation, and installation, refer to the [Installation Guide](docs/en/installation_guide.md).
+
 ## Quick Start<a name="EN-US_TOPIC_0000002551662477"></a>
 
-The rocksdb-8.3.3-kae_zstd branch is used as an example. For details about how to deploy the environment, see [Feature Guide](docs/en/feature_guide.md).
+The `rocksdb-8.3.3-kae_zstd` branch is used as an example. For details about how to deploy the environment, see [Installation Guide](docs/en/installation_guide.md).
 
 1. Modify the test script.
 
@@ -49,7 +53,7 @@ The rocksdb-8.3.3-kae_zstd branch is used as an example. For details about how t
 
 2. Test the performance.
 
-   ```sh
+    ```sh
     sh test_perf_all.sh
     ```
 
@@ -62,10 +66,6 @@ The rocksdb-8.3.3-kae_zstd branch is used as an example. For details about how t
     mkfs.ext4 /dev/nvme0n1
     mount /dev/nvme0n1 /mnt/rocksdb_data/test
     ```
-
-## Environment Deployment<a name="EN-US_TOPIC_0000002520502500"></a>
-
-For details about the environment requirements and compilation and installation guide, see [Feature Guide](docs/en/feature_guide.md).
 
 ## Disclaimer<a name="EN-US_TOPIC_0000002551702485"></a>
 
@@ -85,9 +85,9 @@ If you do not want your model or dataset to be mentioned in this project, or if 
 
 ## License<a name="EN-US_TOPIC_0000002520662484"></a>
 
-The code of this project is licensed under the Apache License 2.0. For details, see [LICENSE](https://gitcode.com/boostkit/rocksdb/blob/master/LICENSE).
+The code of this project is licensed under the Apache License 2.0. For details, see [LICENSE](LICENSE).
 
-The documents of this project are licensed under CC-BY 4.0. For details, see [LICENSE](docs/LICENSE-DOCS).
+The documents of this project are licensed under CC-BY 4.0. For details, see [LICENSE](docs/LICENSE).
 
 ## Contribution Statement<a name="EN-US_TOPIC_0000002551662481"></a>
 
