@@ -1,3 +1,3 @@
 - [Project Introduction](../../README_EN.md)
-- [Feature Guide](feature_guide.md)
+- [Installation Guide](installation_guide.md)
 - [Release Notes](release_notes.md)

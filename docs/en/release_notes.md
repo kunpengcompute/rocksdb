@@ -28,13 +28,13 @@
 
 ### Hardware Version Mapping<a name="EN-US_TOPIC_0000002552663559"></a>
 
-| Project | Requirement                                         |
+| Item | Requirement                                         |
 |-----|---------------------------------------------|
 | Processor| Kunpeng 920<br>New Kunpeng 920 processor model<br>Kunpeng 950|
 
 ### Virus Scan Results<a name="EN-US_TOPIC_0000002521463602"></a>
 
-Virus scanning is not involved because no software package is released.
+Virus scan is not involved because no software package is released.
 
 ## v1.1.0<a name="EN-US_TOPIC_0000002521623548"></a>
 
@@ -78,3 +78,11 @@ None
 ### Obtaining Documentation<a name="EN-US_TOPIC_0000002521623614"></a>
 
 Visit the [open-source repository](https://gitcode.com/boostkit/rocksdb) to view or download related documents.
+
+## Change History
+
+| Date  | Description       |
+|-------|----------|
+| 2025-12-30 | This is the third official release. <br> Adapted RocksDB compilation and installation for Debian.|
+| 2024-06-30 | This is the second official release.<br> Supports RocksDB hardware offload.|
+| 2025-12-30 | This is the first official release.|

@@ -6,16 +6,16 @@ This document provides guidance based on the Kunpeng server and the openEuler an
 
 **Hardware Requirements<a name="en-us_topic_0000001217080138_section10273165810425"></a>**
 
-| Project   | Specifications                                             |
+| Item   | Specifications                                             |
 |-------|-------------------------------------------------|
-| CPU model| Kunpeng 920<br> New Kunpeng 920 processor model<br> Kunpeng 950|
+| CPU |<ul><li>Kunpeng 920</li><li>New Kunpeng 920 processor model</li><li>Kunpeng 950</li></ul>|
 
 **Software Requirements<a name="section1240364411598"></a>**
 
-| Project     | Version                                                                             |
-|---------|---------------------------------------------------------------------------------|
-| OS   | openEuler 22.03 LTS SP1 <br> openEuler 22.03 LTS SP2 <br> Debian GNU/Linux 10 |
-| RocksDB | 6.1.2 <br> 7.9.2 <br> 8.3.3                                                   |
+| Item | Version                                                                         |
+|------|---------------------------------------------------------------------------------|
+| OS   | <ul><li>openEuler 22.03 LTS SP1</li><li>openEuler 22.03 LTS SP2 </li><li>Debian GNU/Linux 10</li></ul> |
+| RocksDB | <ul><li>6.1.2 </li><li> 7.9.2 </li><li> 8.3.3</li></ul>                                                  |
 
 **Software Packages<a id="section13411942256"></a>**
 
@@ -24,7 +24,7 @@ This document provides guidance based on the Kunpeng server and the openEuler an
 | BoostKit-KSAL_1.10.0.zip | KSAL closed-source algorithm package, which is used to enable Kunpeng acceleration.                            | [Kungpeng community](https://www.hikunpeng.com/developer/download?zhTitle=%E5%88%86%E5%B8%83%E5%BC%8F%E5%AD%98%E5%82%A8&zhSubTitle=%E5%AD%98%E5%82%A8%E7%AE%97%E6%B3%95%E5%8A%A0%E9%80%9F%E5%BA%93&enTitle=SDS&enSubTitle=KSA) |
 | KAE-kae2.zip             | KAE source package, which is used to install the KAE driver and KAEZstd (KAE 2.0 applies to openEuler kernel 5.1*x* and Debian kernel 5.15.*x*.)| [Open-source community](https://gitcode.com/boostkit/KAE/tree/kae2)                                                                                                                                                              |
 
->![](public_sys-resources/icon-note.gif) **Note:**
+>![](public_sys-resources/icon-note.gif) **NOTE**
 > 
 >Kunpeng Storage Acceleration Library (KSAL) is a Huawei-developed closed-source library. Kunpeng Accelerator Engine (KAE) is a hardware acceleration solution available only on Kunpeng processors.
 
@@ -79,8 +79,6 @@ Hotspot functions, such as CRC and memcpy, exist in RocksDB read/write processes
     Component AppendInfo:   kunpeng
     ```
 
-KSAL provides acceleration packages such as storage CRC, EC, and prefetch algorithms. It uses algorithms optimized for the Kunpeng platform to replace open-source algorithms, improving storage performance.
-
 ## Installing KAEZstd<a name="EN-US_TOPIC_0000002520522886"></a>
 
 ### openEuler<a name="EN-US_TOPIC_0000002551722885"></a>
@@ -108,7 +106,7 @@ KAE is a hardware acceleration solution based on the Kunpeng 920 processor. It i
     yum install -y kernel-devel-5.10.0-216.0.0.115.oe2203sp4.aarch64
     ```
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
     >
     >When installing kernel-devel, run `uname -r` to query the current kernel version. The kernel-devel version must be the same as the current kernel version.
 
@@ -244,8 +242,6 @@ KAE is a hardware acceleration solution based on the Kunpeng 920 processor. It i
     256
     ```
 
-In RocksDB write scenarios, when a large amount of data is written, the background thread needs to compact the data. If the compaction is slow, data writing may be temporarily interrupted. During compaction, a compression algorithm is invoked to compress data. Optimizing the compression algorithm can effectively improve the compaction efficiency and RocksDB write performance.
-
 ### Debian<a name="EN-US_TOPIC_0000002520682866"></a>
 
 In RocksDB write scenarios, when a large amount of data is written, the background thread needs to compact the data. If the compaction is slow, data writing may be temporarily interrupted. During compaction, a compression algorithm is invoked to compress data. Optimizing the compression algorithm can effectively improve the compaction efficiency and RocksDB write performance.
@@ -278,9 +274,9 @@ KAE is a hardware acceleration solution based on the Kunpeng 920 processor. It i
             bash build.sh driver
             ```
 
-            >![](public_sys-resources/icon-note.gif) **Note:**
+            >![](public_sys-resources/icon-note.gif) **NOTE**
             > 
-            >If an error is reported because the curve25519-related module is not enabled during kernel compilation, [modify the configuration](https://gitcode.com/boostkit/KAE/commit/eea16ad40e2defdaeb3bfc05d5dfc8b77b8b1798?ref=dev_kae2_forByteDance).
+            >If an error is reported because the curve25519-related module is not enabled during kernel compilation, modify the configuration based on [commit-eea16ad4](https://gitcode.com/boostkit/KAE/commit/eea16ad40e2defdaeb3bfc05d5dfc8b77b8b1798?ref=dev_kae2_forByteDance).
 
         2. Check whether the accelerator engine file system exists.
 
@@ -406,8 +402,6 @@ KAE is a hardware acceleration solution based on the Kunpeng 920 processor. It i
     256
     ```
 
-In RocksDB write scenarios, when a large amount of data is written, the background thread needs to compact the data. If the compaction is slow, data writing may be temporarily interrupted. During compaction, a compression algorithm is invoked to compress data. Optimizing the compression algorithm can effectively improve the compaction efficiency and RocksDB write performance.
-
 ## Compiling and Installing RocksDB<a name="EN-US_TOPIC_0000002520682864"></a>
 
 ### openEuler<a name="EN-US_TOPIC_0000002551722883"></a>
@@ -426,7 +420,7 @@ This section describes how to compile and install RocksDB 6.1.2 and 8.3.3. Rocks
    git clone https://github.com/facebook/rocksdb.git
    cd rocksdb
    git checkout 791a7fe4023ac795072a9e0cbfc679a3764a2ba0
-   wget https://gitcode.com/boostkit/rocksdb/blob/master/rocksdb-8.3.3-kae_zstd.patch
+   wget https://gitcode.com/boostkit/rocksdb/raw/master/rocksdb-8.3.3-kae_zstd.patch
    git apply rocksdb-8.3.3-kae_zstd.patch
    ```
 
@@ -491,7 +485,8 @@ This section describes how to compile and install RocksDB 6.1.2 and 8.3.3. Rocks
 
     After the execution is complete, you can view performance data in the `rocksdb/test_data` directory.
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
+    >
     >It takes about 10 hours to execute all test cases. You can change the key-value size in line 8 and the number of databases in line 13 to adjust execution time or modify test cases. The default read/write path is `/mnt/rocksdb_data/test`. To change the path, edit the second line basedir in the `test_perf_all.sh` script to the specified path. Before running the script, ensure that the path is available.
     >To mount a device to a specified path, run the following commands (replace **nvme0n1** as required):
 >
@@ -516,7 +511,7 @@ This section describes how to compile and install RocksDB 6.1.2.
    git clone https://github.com/facebook/rocksdb.git
    cd rocksdb
    git checkout 2b38e2dd6602a17a2010308580fd5d8c91dea650
-   wget https://gitcode.com/boostkit/rocksdb/blob/master/6.1.2-optimization.patch
+   wget https://gitcode.com/boostkit/rocksdb/raw/master/6.1.2-optimization.patch
    git apply 6.1.2-optimization.patch
    ```
 
@@ -526,7 +521,7 @@ This section describes how to compile and install RocksDB 6.1.2.
     bash build.sh
     ```
 
-    >![](public_sys-resources/icon-note.gif) **Note:**
+    >![](public_sys-resources/icon-note.gif) **NOTE**
     >
     >- During compilation, ensure that the GNU Assembler version is 2.41 or later.
     >- By default, the Release mode is used to compile **build.sh**. You can specify the compilation mode to Debug, RelWithDebInfo, or Release as required. For example, use the following command to specify the Release mode:
@@ -563,3 +558,11 @@ This section describes how to compile and install RocksDB 6.1.2.
     ```sh
     ./db_bench --compression_type=zstd
     ```
+
+## Change History
+
+| Date  | Description       |
+|-------|----------|
+| 2025-12-30 | This is the third official release. <br> Adapted RocksDB compilation and installation for Debian.|
+| 2024-06-30 | This is the second official release.<br> Supports RocksDB hardware offload.|
+| 2025-12-30 | This is the first official release.|
