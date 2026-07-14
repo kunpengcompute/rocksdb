@@ -22,9 +22,8 @@ BoostKit RocksDB 是面向鲲鹏平台的 RocksDB 数据库优化补丁仓库，
 
 | 文档名称 | 内容说明 | 链接 |
 | --- | --- | --- |
-| rocksdb_crc32_and_filter_optimization_release_notes | CRC32 及 Filter 优化版本发布及配套信息 | [版本说明书](docs/zh/rocksdb_crc32_and_filter_optimization_release_notes.md) |
-| rocksdb_crc32_and_filter_optimization_feature_guide | CRC32 及 Filter 优化原理、安装配置方法 | [特性指南](docs/zh/rocksdb_crc32_and_filter_optimization_feature_guide.md) |
-| 64kb_page_based_rocksdb_optimization_release_notes | 64K 页适配优化版本说明及配套信息 | [版本说明书](docs/zh/64kb_page_based_rocksdb_optimization_release_notes.md) |
+| rocksdb_crc32_optimization_feature_guide | CRC32优化原理、安装配置方法 | [特性指南](docs/zh/rocksdb_crc32_optimization_feature_guide.md) |
+| rocksdb_filter_optimization_feature_guide | Filter 优化原理、安装配置方法 | [特性指南](docs/zh/rocksdb_filter_optimization_feature_guide.md) |
 | 64kb_page_based_rocksdb_optimization_feature_guide | 64K 页适配优化原理、安装使用方法 | [特性指南](docs/zh/64kb_page_based_rocksdb_optimization_feature_guide.md) |
 
 ### 目录结构
@@ -68,12 +67,12 @@ rocksdb-patch/
 <tr>
 <td rowspan="2">校验加速</td>
 <td>CRC32 硬件指令优化</td>
-<td><a href="docs/zh/rocksdb_crc32_and_filter_optimization_feature_guide.md">rocksdb_crc32_and_filter_optimization_feature_guide.md</a></td>
+<td><a href="docs/zh/rocksdb_crc32_optimization_feature_guide.md">rocksdb_crc32_optimization_feature_guide.md</a></td>
 <td>使用 CRC32、pmull 硬件指令和 SVE2 向量指令优化 CRC32 校验计算，消除 CPU 性能瓶颈，提升 I/O 吞吐。</td>
 </tr>
 <tr>
 <td>智能布隆过滤器</td>
-<td><a href="docs/zh/rocksdb_crc32_and_filter_optimization_feature_guide.md">rocksdb_crc32_and_filter_optimization_feature_guide.md</a></td>
+<td><a href="docs/zh/rocksdb_filter_optimization_feature_guide.md">rocksdb_filter_optimization_feature_guide.md</a></td>
 <td>针对热数据场景动态增加布隆过滤器位图大小，提升判断精度减少误判率，降低无效磁盘 I/O。</td>
 </tr>
 <tr>
