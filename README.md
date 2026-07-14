@@ -32,9 +32,10 @@ BoostKit RocksDB 是面向鲲鹏平台的 RocksDB 数据库优化补丁仓库，
 rocksdb-patch/
 ├── README.md                                                             # 仓库总览入口，说明分支与特性导航
 ├── docs/zh/
-│   ├── rocksdb_crc32_and_filter_optimization_release_notes.md            # CRC32 及 Filter 优化版本发布说明
-│   ├── rocksdb_crc32_and_filter_optimization_feature_guide.md            # CRC32 及 Filter 优化原理与使能指导
-│   ├── 64kb_page_based_rocksdb_optimization_release_notes.md             # 64K 页适配优化版本发布说明
+│   ├── rocksdb__release_notes.md            
+#  版本发布说明
+│   ├── rocksdb_crc32_optimization_feature_guide.md            # CRC32优化原理与使能指导
+│   ├── rocksdb_filter_optimization_feature_guide.md            # Filter优化原理与使能指导
 │   ├── 64kb_page_based_rocksdb_optimization_feature_guide.md             # 64K 页适配优化原理与使能指导
 │   ├── figures/                                                          # 文档配图目录
 │   │   ├── zh-cn_image_0000002516993780.png                              # CRC32 校验性能瓶颈图

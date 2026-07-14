@@ -33,9 +33,10 @@ The repository documents are as follows:
 rocksdb-patch/
 ├── README.md                                                             # Entry to the repository overview, providing branch details and feature navigation
 ├── docs/en/
-│   ├── rocksdb_crc32_and_filter_optimization_release_notes.md            # Release notes of the CRC32 and filter optimization feature
-│   ├── rocksdb_crc32_and_filter_optimization_feature_guide.md            # Principles and enabling guide of the CRC32 and filter optimization feature
-│   ├── 64kb_page_based_rocksdb_optimization_release_notes.md             # Release notes of the 64 KB page-based optimization feature
+│   ├── rocksdb_release_notes.md            
+# Release notes 
+│   ├── rocksdb_crc32_optimization_feature_guide.md            # Principles and enabling guide of the CRC32 optimization feature
+│   ├── rocksdb_filter_optimization_feature_guide.md            # Principles and enabling guide of the filter optimization feature
 │   ├── 64kb_page_based_rocksdb_optimization_feature_guide.md             # Principles and enabling guide of the 64 KB page-based optimization feature
 │   ├── figures/                                                          # Directory for document figures
 │   │   ├── en-us_image_0000002516993780.png                              # CRC32 performance bottleneck
