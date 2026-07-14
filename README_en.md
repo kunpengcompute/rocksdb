@@ -22,9 +22,9 @@ The repository documents are as follows:
 
 | Document| Description| Link|
 | --- | --- | --- |
-| _rocksdb_crc32_and_filter_optimization_release_notes_ | Version release and mapping information of the CRC32 and filter optimization feature| [Release Notes](docs/en/rocksdb_crc32_and_filter_optimization_release_notes.md)|
-| _rocksdb_crc32_and_filter_optimization_feature_guide_ | Principles and installation and configuration methods of the CRC32 and filter optimization feature| [Feature Guide](docs/en/rocksdb_crc32_and_filter_optimization_feature_guide.md)|
-| _64kb_page_based_rocksdb_optimization_release_notes_ | Version release and mapping information of the 64 KB page-based optimization feature| [Release Notes](docs/en/64kb_page_based_rocksdb_optimization_release_notes.md)|
+
+| rocksdb_crc32_optimization_feature_guide | Principles and installation and configuration methods of the CRC32 optimization feature| [Feature Guide](docs/en/rocksdb_crc32_optimization_feature_guide.md)|
+| rocksdb_filter_optimization_feature_guide | Principles and installation and configuration methods of the filter optimization feature| [Feature Guide](docs/en/rocksdb_filter_optimization_feature_guide.md)|
 | _64kb_page_based_rocksdb_optimization_feature_guide_ | Principles, installation methods, and usage of the 64 KB page-based optimization feature| [Feature Guide](docs/en/64kb_page_based_rocksdb_optimization_feature_guide.md)|
 
 ### Directory Structure
@@ -33,9 +33,10 @@ The repository documents are as follows:
 rocksdb-patch/
 ├── README.md                                                             # Entry to the repository overview, providing branch details and feature navigation
 ├── docs/en/
-│   ├── rocksdb_crc32_and_filter_optimization_release_notes.md            # Release notes of the CRC32 and filter optimization feature
-│   ├── rocksdb_crc32_and_filter_optimization_feature_guide.md            # Principles and enabling guide of the CRC32 and filter optimization feature
-│   ├── 64kb_page_based_rocksdb_optimization_release_notes.md             # Release notes of the 64 KB page-based optimization feature
+│   ├── rocksdb_release_notes.md            
+# Release notes 
+│   ├── rocksdb_crc32_optimization_feature_guide.md            # Principles and enabling guide of the CRC32 optimization feature
+│   ├── rocksdb_filter_optimization_feature_guide.md            # Principles and enabling guide of the filter optimization feature
 │   ├── 64kb_page_based_rocksdb_optimization_feature_guide.md             # Principles and enabling guide of the 64 KB page-based optimization feature
 │   ├── figures/                                                          # Directory for document figures
 │   │   ├── en-us_image_0000002516993780.png                              # CRC32 performance bottleneck
@@ -68,12 +69,12 @@ rocksdb-patch/
 <tr>
 <td rowspan="2">Verification acceleration</td>
 <td>CRC32 hardware instruction-based optimization</td>
-<td><a href="docs/en/rocksdb_crc32_and_filter_optimization_feature_guide.md">rocksdb_crc32_and_filter_optimization_feature_guide.md</a></td>
+<td><a href="docs/en/rocksdb_crc32_optimization_feature_guide.md">rocksdb_crc32_optimization_feature_guide.md</a></td>
 <td>This feature uses CRC32, pmull hardware instructions, and SVE2 vector instructions to optimize CRC32 verification and calculation, eliminating CPU performance bottlenecks while improving I/O throughput.</td>
 </tr>
 <tr>
 <td>Intelligent Bloom filter</td>
-<td><a href="docs/en/rocksdb_crc32_and_filter_optimization_feature_guide.md">rocksdb_crc32_and_filter_optimization_feature_guide.md</a></td>
+<td><a href="docs/en/rocksdb_filter_optimization_feature_guide.md">rocksdb_filter_optimization_feature_guide.md</a></td>
 <td>In hot data scenarios, this feature dynamically increases the bitmap size of the Bloom filter to improve the accuracy and reduce the false positive rate and invalid drive I/O operations.</td>
 </tr>
 <tr>
