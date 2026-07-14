@@ -23,7 +23,7 @@ The repository documents are as follows:
 | Document| Description| Link|
 | --- | --- | --- |
 
-| rocksdb_crc32_optimization_feature_guide | Principles and installation and configuration methods of the CRC32 optimization feature| [Feature Guide](docs/en/rocksdb_filter_optimization_feature_guide.md)|
+| rocksdb_crc32_optimization_feature_guide | Principles and installation and configuration methods of the CRC32 optimization feature| [Feature Guide](docs/en/rocksdb_crc32_optimization_feature_guide.md)|
 | rocksdb_filter_optimization_feature_guide | Principles and installation and configuration methods of the filter optimization feature| [Feature Guide](docs/en/rocksdb_filter_optimization_feature_guide.md)|
 | _64kb_page_based_rocksdb_optimization_feature_guide_ | Principles, installation methods, and usage of the 64 KB page-based optimization feature| [Feature Guide](docs/en/64kb_page_based_rocksdb_optimization_feature_guide.md)|
 
