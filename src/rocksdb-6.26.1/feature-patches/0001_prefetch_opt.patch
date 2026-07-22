@@ -1,0 +1,128 @@
+From 3d4a00ce0b6b9f95878f190bf7168ed1e7c13bd5 Mon Sep 17 00:00:00 2001
+From: why <why2017223584@163.com>
+Date: Wed, 22 Jul 2026 11:56:23 +0800
+Subject: [PATCH] prefetch patch init
+
+---
+ memtable/inlineskiplist.h  | 25 +++++++++++++++++++++++++
+ table/block_based/block.cc | 16 ++++++++++++++++
+ 2 files changed, 41 insertions(+)
+
+diff --git a/memtable/inlineskiplist.h b/memtable/inlineskiplist.h
+index 028fde3a2..b0f85ded1 100644
+--- a/memtable/inlineskiplist.h
++++ b/memtable/inlineskiplist.h
+@@ -482,9 +482,18 @@ InlineSkipList<Comparator>::FindGreaterOrEqual(const char* key) const {
+   const DecodedKey key_decoded = compare_.decode_key(key);
+   while (true) {
+     Node* next = x->Next(level);
++#ifdef __aarch64__
++    if (level > 0) {
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (x->Next(level - 1)));
++    }
++    if (next != nullptr) {
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (next->Next(level)));
++    }
++#else
+     if (next != nullptr) {
+       PREFETCH(next->Next(level), 0, 1);
+     }
++#endif
+     // Make sure the lists are sorted
+     assert(x == head_ || next == nullptr || KeyIsAfterNode(next->Key(), x));
+     // Make sure we haven't overshot during our search
+@@ -526,7 +535,11 @@ InlineSkipList<Comparator>::FindLessThan(const char* key, Node** prev,
+     assert(x != nullptr);
+     Node* next = x->Next(level);
+     if (next != nullptr) {
++#ifdef __aarch64__
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (next->Next(level)));
++#else
+       PREFETCH(next->Next(level), 0, 1);
++#endif
+     }
+     assert(x == head_ || next == nullptr || KeyIsAfterNode(next->Key(), x));
+     assert(x == head_ || KeyIsAfterNode(key_decoded, x));
+@@ -622,7 +635,11 @@ uint64_t InlineSkipList<Comparator>::EstimateCount(const char* key) const {
+     assert(x == head_ || compare_(x->Key(), key_decoded) < 0);
+     Node* next = x->Next(level);
+     if (next != nullptr) {
++#ifdef __aarch64__
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (next->Next(level)));
++#else
+       PREFETCH(next->Next(level), 0, 1);
++#endif
+     }
+     if (next == nullptr || compare_(next->Key(), key_decoded) >= 0) {
+       if (level == 0) {
+@@ -763,11 +780,19 @@ void InlineSkipList<Comparator>::FindSpliceForLevel(const DecodedKey& key,
+   while (true) {
+     Node* next = before->Next(level);
+     if (next != nullptr) {
++#ifdef __aarch64__
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (next->Next(level)));
++#else
+       PREFETCH(next->Next(level), 0, 1);
++#endif
+     }
+     if (prefetch_before == true) {
+       if (next != nullptr && level>0) {
++#ifdef __aarch64__
++        asm volatile("prfm pldl1keep, [%0]" :: "r" (next->Next(level-1)));
++#else
+         PREFETCH(next->Next(level-1), 0, 1);
++#endif
+       }
+     }
+     assert(before == head_ || next == nullptr ||
+diff --git a/table/block_based/block.cc b/table/block_based/block.cc
+index 9c2a60844..23d230b0f 100644
+--- a/table/block_based/block.cc
++++ b/table/block_based/block.cc
+@@ -379,6 +379,10 @@ void IndexBlockIter::SeekImpl(const Slice& target) {
+   if (raw_key_.IsUserKey()) {
+     seek_key = ExtractUserKey(target);
+   }
++#ifdef __aarch64__
++  int mid = (num_restarts_ - 1) / 2;
++  asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid * sizeof(uint32_t)));
++#endif
+   status_ = Status::OK();
+   uint32_t index = 0;
+   bool skip_linear_scan = false;
+@@ -491,6 +495,9 @@ template <typename DecodeEntryFunc>
+ bool DataBlockIter::ParseNextDataKey(const char* limit) {
+   current_ = NextEntryOffset();
+   const char* p = data_ + current_;
++#ifdef __aarch64__
++  asm volatile("prfm pldl1keep, [%0]" :: "r" (p));
++#endif
+   if (!limit) {
+     limit = data_ + restarts_;  // Restarts come right after data
+   }
+@@ -553,6 +560,9 @@ bool DataBlockIter::ParseNextDataKey(const char* limit) {
+ bool IndexBlockIter::ParseNextIndexKey() {
+   current_ = NextEntryOffset();
+   const char* p = data_ + current_;
++#ifdef __aarch64__
++  asm volatile("prfm pldl1keep, [%0]" :: "r" (p));
++#endif
+   const char* limit = data_ + restarts_;  // Restarts come right after data
+   if (p >= limit) {
+     // No more entries to return.  Mark as invalid.
+@@ -708,6 +718,12 @@ bool BlockIter<TValue>::BinarySeek(const Slice& target, uint32_t* index,
+   while (left != right) {
+     // The `mid` is computed by rounding up so it lands in (`left`, `right`].
+     int64_t mid = left + (right - left + 1) / 2;
++#ifdef __aarch64__
++    int64_t mid1 = mid + (right - mid + 1) / 2;
++    int64_t mid2 = left + (mid - left) / 2;
++    asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid1 * sizeof(uint32_t)));
++    asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid2 * sizeof(uint32_t)));
++#endif
+     uint32_t region_offset = GetRestartPoint(static_cast<uint32_t>(mid));
+     uint32_t shared, non_shared;
+     const char* key_ptr = DecodeKeyFunc()(
+-- 
+2.55.0.windows.2
+
