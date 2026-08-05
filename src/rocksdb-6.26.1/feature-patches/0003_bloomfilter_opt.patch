@@ -1,0 +1,112 @@
+From 31379127692d56e65c88c2580ee0fc2a39aac9e7 Mon Sep 17 00:00:00 2001
+From: why <why2017223584@163.com>
+Date: Wed, 5 Aug 2026 17:37:12 +0800
+Subject: [PATCH] bloomfilter patch init
+
+---
+ build_tools/build_detect_platform | 14 +++++++++
+ util/bloom_impl.h                 | 49 +++++++++++++++++++++++++++++++
+ 2 files changed, 63 insertions(+)
+
+diff --git a/build_tools/build_detect_platform b/build_tools/build_detect_platform
+index c88ad1d55..ec16ab48c 100644
+--- a/build_tools/build_detect_platform
++++ b/build_tools/build_detect_platform
+@@ -799,6 +799,20 @@ if [ "$?" = 0 ]; then
+   COMMON_FLAGS="$COMMON_FLAGS -DHAVE_UINT128_EXTENSION"
+ fi
+ 
++$CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -march=armv8-a+sve2 -x c++ - -o /dev/null 2>/dev/null <<EOF
++  #include <cstdint>
++  #include <arm_sve.h>
++  int main() {
++    const auto a = svdup_u32(1);
++    const auto b = svcreate2(a, a);
++    const auto c = svtbl2_u32(b, a);
++    (void)c;
++  }
++EOF
++if [ "$?" = 0 ]; then
++  COMMON_FLAGS="$COMMON_FLAGS -DHAVE_SVE2"
++fi
++
+ # iOS doesn't support thread-local storage, but this check would erroneously
+ # succeed because the cross-compiler flags are added by the Makefile, not this
+ # script.
+diff --git a/util/bloom_impl.h b/util/bloom_impl.h
+index 5f2a69e07..78257d9a6 100644
+--- a/util/bloom_impl.h
++++ b/util/bloom_impl.h
+@@ -12,6 +12,7 @@
+ #include <stdint.h>
+ 
+ #include <cmath>
++#include <sys/auxv.h>
+ 
+ #include "port/port.h"  // for PREFETCH
+ #include "rocksdb/slice.h"
+@@ -21,6 +22,10 @@
+ #include <immintrin.h>
+ #endif
+ 
++#ifdef HAVE_SVE2
++#include <arm_sve.h>
++#endif
++
+ namespace ROCKSDB_NAMESPACE {
+ 
+ class BloomMath {
+@@ -227,6 +232,50 @@ class FastLocalBloomImpl {
+   static inline bool HashMayMatchPrepared(uint32_t h2, int num_probes,
+                                           const char *data_at_cache_line) {
+     uint32_t h = h2;
++#ifdef __ARM_FEATURE_SVE2
++    unsigned long auxval2 = getauxval(AT_HWCAP2);
++    if (auxval2 & HWCAP2_SVE2) {
++      int rem_probes = num_probes;
++
++      static const uint32_t multipliers_arr[8] = {
++          0x00000001, 0x9e3779b9, 0xe35e67b1, 0x734297e9,
++          0x35fbe861, 0xdeb7c719, 0x448b211, 0x3459b749
++      };
++
++      svuint32_t multipliers = svld1_u32(svptrue_b32(), multipliers_arr);
++
++      while (rem_probes > 0) {
++        const uint32_t *data_as_uint32 = (const uint32_t *)data_at_cache_line;
++        svuint32_t lower = svld1_u32(svptrue_b32(), data_as_uint32);
++
++        int32_t probes_this_iter = (rem_probes < 8) ? rem_probes : 8;
++        svbool_t pg = svwhilelt_b32(0, probes_this_iter);
++        svuint32_t hash_vector = svdup_u32(h);
++        hash_vector = svmul_u32_z(pg, hash_vector, multipliers);
++        svuint32_t word_addresses = svlsr_x(pg, hash_vector, 28);
++
++        svuint32_t upper = svld1_vnum_u32(svptrue_b32(), data_as_uint32, 1);
++        svuint32x2_t all_value_vector = svcreate2(lower, upper);
++        svuint32_t value_vector = svtbl2_u32(all_value_vector, word_addresses);
++
++        svuint32_t bit_addresses = svlsl_x(pg, hash_vector, 4);
++        bit_addresses = svlsr_x(pg, bit_addresses, 27);
++        svuint32_t bit_mask = svlsl_u32_z(pg, svdup_u32(1), bit_addresses);
++
++        svuint32_t and_result = svand_u32_z(pg, value_vector, bit_mask);
++        svbool_t cmp_result = svcmpne_u32(pg, and_result, bit_mask);
++        if (svptest_any(pg, cmp_result)) {
++          return false;
++        }
++
++        if (rem_probes > 8) {
++          h *= 0xab25f4c1;
++        }
++        rem_probes -= probes_this_iter;
++      }
++      return true;
++    }
++#endif
+ #ifdef HAVE_AVX2
+     int rem_probes = num_probes;
+ 
+-- 
+2.55.0.windows.2
+
