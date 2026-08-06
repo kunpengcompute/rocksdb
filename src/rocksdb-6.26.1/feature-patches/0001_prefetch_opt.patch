@@ -1,12 +1,12 @@
-From 3d4a00ce0b6b9f95878f190bf7168ed1e7c13bd5 Mon Sep 17 00:00:00 2001
+From 4927562a048f3affe7807c7b7514a80585d65b94 Mon Sep 17 00:00:00 2001
 From: why <why2017223584@163.com>
-Date: Wed, 22 Jul 2026 11:56:23 +0800
-Subject: [PATCH] prefetch patch init
+Date: Wed, 5 Aug 2026 17:15:04 +0800
+Subject: [PATCH] prefetch patch v2
 
 ---
  memtable/inlineskiplist.h  | 25 +++++++++++++++++++++++++
- table/block_based/block.cc | 16 ++++++++++++++++
- 2 files changed, 41 insertions(+)
+ table/block_based/block.cc | 21 +++++++++++++++++++++
+ 2 files changed, 46 insertions(+)
 
 diff --git a/memtable/inlineskiplist.h b/memtable/inlineskiplist.h
 index 028fde3a2..b0f85ded1 100644
@@ -76,21 +76,31 @@ index 028fde3a2..b0f85ded1 100644
      }
      assert(before == head_ || next == nullptr ||
 diff --git a/table/block_based/block.cc b/table/block_based/block.cc
-index 9c2a60844..23d230b0f 100644
+index 9c2a60844..140d63930 100644
 --- a/table/block_based/block.cc
 +++ b/table/block_based/block.cc
-@@ -379,6 +379,10 @@ void IndexBlockIter::SeekImpl(const Slice& target) {
+@@ -16,6 +16,7 @@
+ #include <vector>
+ 
+ #include "monitoring/perf_context_imp.h"
++#include "port/likely.h"
+ #include "port/port.h"
+ #include "port/stack_trace.h"
+ #include "rocksdb/comparator.h"
+@@ -379,6 +380,12 @@ void IndexBlockIter::SeekImpl(const Slice& target) {
    if (raw_key_.IsUserKey()) {
      seek_key = ExtractUserKey(target);
    }
 +#ifdef __aarch64__
-+  int mid = (num_restarts_ - 1) / 2;
-+  asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid * sizeof(uint32_t)));
++  if (prefix_index_ == nullptr) {
++    int mid = (num_restarts_ - 1) / 2;
++    asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid * sizeof(uint32_t)));
++  }
 +#endif
    status_ = Status::OK();
    uint32_t index = 0;
    bool skip_linear_scan = false;
-@@ -491,6 +495,9 @@ template <typename DecodeEntryFunc>
+@@ -491,6 +498,9 @@ template <typename DecodeEntryFunc>
  bool DataBlockIter::ParseNextDataKey(const char* limit) {
    current_ = NextEntryOffset();
    const char* p = data_ + current_;
@@ -100,7 +110,7 @@ index 9c2a60844..23d230b0f 100644
    if (!limit) {
      limit = data_ + restarts_;  // Restarts come right after data
    }
-@@ -553,6 +560,9 @@ bool DataBlockIter::ParseNextDataKey(const char* limit) {
+@@ -553,6 +563,9 @@ bool DataBlockIter::ParseNextDataKey(const char* limit) {
  bool IndexBlockIter::ParseNextIndexKey() {
    current_ = NextEntryOffset();
    const char* p = data_ + current_;
@@ -110,7 +120,7 @@ index 9c2a60844..23d230b0f 100644
    const char* limit = data_ + restarts_;  // Restarts come right after data
    if (p >= limit) {
      // No more entries to return.  Mark as invalid.
-@@ -708,6 +718,12 @@ bool BlockIter<TValue>::BinarySeek(const Slice& target, uint32_t* index,
+@@ -708,6 +721,14 @@ bool BlockIter<TValue>::BinarySeek(const Slice& target, uint32_t* index,
    while (left != right) {
      // The `mid` is computed by rounding up so it lands in (`left`, `right`].
      int64_t mid = left + (right - left + 1) / 2;
@@ -118,7 +128,9 @@ index 9c2a60844..23d230b0f 100644
 +    int64_t mid1 = mid + (right - mid + 1) / 2;
 +    int64_t mid2 = left + (mid - left) / 2;
 +    asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid1 * sizeof(uint32_t)));
-+    asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid2 * sizeof(uint32_t)));
++    if (LIKELY(mid2 >= 0)) {
++      asm volatile("prfm pldl1keep, [%0]" :: "r" (data_ + restarts_ + mid2 * sizeof(uint32_t)));
++    }
 +#endif
      uint32_t region_offset = GetRestartPoint(static_cast<uint32_t>(mid));
      uint32_t shared, non_shared;
