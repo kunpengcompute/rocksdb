@@ -1,22 +1,23 @@
-From 31379127692d56e65c88c2580ee0fc2a39aac9e7 Mon Sep 17 00:00:00 2001
+From e7371bf0264e3e404fa2bbd3d0309c4d7d88578d Mon Sep 17 00:00:00 2001
 From: why <why2017223584@163.com>
-Date: Wed, 5 Aug 2026 17:37:12 +0800
-Subject: [PATCH] bloomfilter patch init
+Date: Wed, 5 Aug 2026 17:26:38 +0800
+Subject: [PATCH] bloomfilter patch v2
 
 ---
- build_tools/build_detect_platform | 14 +++++++++
- util/bloom_impl.h                 | 49 +++++++++++++++++++++++++++++++
- 2 files changed, 63 insertions(+)
+ build_tools/build_detect_platform | 15 +++++++
+ util/bloom_impl.h                 | 65 +++++++++++++++++++++++++++++++
+ 2 files changed, 80 insertions(+)
 
 diff --git a/build_tools/build_detect_platform b/build_tools/build_detect_platform
-index c88ad1d55..ec16ab48c 100644
+index c88ad1d55..fbf3f82bb 100644
 --- a/build_tools/build_detect_platform
 +++ b/build_tools/build_detect_platform
-@@ -799,6 +799,20 @@ if [ "$?" = 0 ]; then
+@@ -799,6 +799,21 @@ if [ "$?" = 0 ]; then
    COMMON_FLAGS="$COMMON_FLAGS -DHAVE_UINT128_EXTENSION"
  fi
  
-+$CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -march=armv8-a+sve2 -x c++ - -o /dev/null 2>/dev/null <<EOF
++ARMCRC_SVE2_FLAGS="-march=armv8-a+crc+crypto+sha3+sve2-aes -msve-vector-bits=256"
++$CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS $ARMCRC_SVE2_FLAGS -x c++ - -o /dev/null 2>/dev/null <<EOF
 +  #include <cstdint>
 +  #include <arm_sve.h>
 +  int main() {
@@ -27,42 +28,58 @@ index c88ad1d55..ec16ab48c 100644
 +  }
 +EOF
 +if [ "$?" = 0 ]; then
-+  COMMON_FLAGS="$COMMON_FLAGS -DHAVE_SVE2"
++  COMMON_FLAGS="$COMMON_FLAGS $ARMCRC_SVE2_FLAGS -DHAVE_ARMCRC_SVE2"
 +fi
 +
  # iOS doesn't support thread-local storage, but this check would erroneously
  # succeed because the cross-compiler flags are added by the Makefile, not this
  # script.
 diff --git a/util/bloom_impl.h b/util/bloom_impl.h
-index 5f2a69e07..78257d9a6 100644
+index 5f2a69e07..f81f6f473 100644
 --- a/util/bloom_impl.h
 +++ b/util/bloom_impl.h
-@@ -12,6 +12,7 @@
- #include <stdint.h>
+@@ -13,6 +13,13 @@
  
  #include <cmath>
-+#include <sys/auxv.h>
  
++#if defined(__linux__) && defined(ROCKSDB_AUXV_GETAUXVAL_PRESENT)
++#include <sys/auxv.h>
++#if defined(__aarch64__)
++#include <asm/hwcap.h>
++#endif
++#endif
++
  #include "port/port.h"  // for PREFETCH
  #include "rocksdb/slice.h"
-@@ -21,6 +22,10 @@
+ #include "util/hash.h"
+@@ -21,6 +28,10 @@
  #include <immintrin.h>
  #endif
  
-+#ifdef HAVE_SVE2
++#if defined(HAVE_ARMCRC_SVE2)
 +#include <arm_sve.h>
 +#endif
 +
  namespace ROCKSDB_NAMESPACE {
  
  class BloomMath {
-@@ -227,6 +232,50 @@ class FastLocalBloomImpl {
+@@ -227,6 +238,60 @@ class FastLocalBloomImpl {
    static inline bool HashMayMatchPrepared(uint32_t h2, int num_probes,
                                            const char *data_at_cache_line) {
      uint32_t h = h2;
-+#ifdef __ARM_FEATURE_SVE2
-+    unsigned long auxval2 = getauxval(AT_HWCAP2);
-+    if (auxval2 & HWCAP2_SVE2) {
++#if defined(HAVE_ARMCRC_SVE2)
++    // The SVE implementation below is laid out for exactly eight 32-bit
++    // lanes (256 bits). Cache the feature check so queries do not repeatedly
++    // read the auxiliary vector.
++    static const bool sve2_available = [] {
++#if defined(__linux__) && defined(__aarch64__) && \
++    defined(ROCKSDB_AUXV_GETAUXVAL_PRESENT) && defined(HWCAP2_SVE2)
++      return (getauxval(AT_HWCAP2) & HWCAP2_SVE2) != 0 && svcntw() == 8;
++#else
++      return false;
++#endif
++    }();
++    if (sve2_available) {
 +      int rem_probes = num_probes;
 +
 +      static const uint32_t multipliers_arr[8] = {
