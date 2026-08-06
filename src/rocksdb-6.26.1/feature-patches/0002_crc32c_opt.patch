@@ -1,63 +1,91 @@
-From cef7324aa92898238b3e8d95547ef4e90c6b9046 Mon Sep 17 00:00:00 2001
+From 32725acbd3f896fa3c13e9e136f9b8914e44a06a Mon Sep 17 00:00:00 2001
 From: why <why2017223584@163.com>
-Date: Tue, 21 Jul 2026 20:06:31 +0800
-Subject: [PATCH] crc32c patch init
+Date: Thu, 6 Aug 2026 15:12:59 +0800
+Subject: [PATCH] crc32c patch v2
 
 ---
- CMakeLists.txt                  |     2 +
- Makefile                        |    39 +-
+ CMakeLists.txt                  |    21 +-
+ Makefile                        |    37 +
  src.mk                          |     6 +
- util/crc32c.cc                  |     8 +
+ util/crc32c.cc                  |    27 +
  util/crc32c_asm.h               |    17 +
  util/crc32c_p8c10.S             |   678 ++
  util/crc32c_p8c10_clmul_const.S | 15764 ++++++++++++++++++++++++++++++
- 7 files changed, 16511 insertions(+), 3 deletions(-)
+ 7 files changed, 16548 insertions(+), 2 deletions(-)
  create mode 100644 util/crc32c_asm.h
  create mode 100644 util/crc32c_p8c10.S
  create mode 100644 util/crc32c_p8c10_clmul_const.S
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 1a6411653..29f6cca8f 100644
+index 1a6411653..7e71dee95 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -831,6 +831,8 @@ set(SOURCES
-         util/compression_context_cache.cc
-         util/concurrent_task_limiter_impl.cc
-         util/crc32c.cc
-+        util/crc32c_p8c10.S
-+        util/crc32c_p8c10_clmul_const.S
-         util/dynamic_bloom.cc
-         util/hash.cc
-         util/murmurhash.cc
+@@ -259,11 +259,17 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
+ endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
+ 
+ if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
+-        CHECK_C_COMPILER_FLAG("-march=armv8-a+crc+crypto" HAS_ARMV8_CRC)
++  CHECK_C_COMPILER_FLAG("-march=armv8-a+crc+crypto" HAS_ARMV8_CRC)
+   if(HAS_ARMV8_CRC)
+     message(STATUS " HAS_ARMV8_CRC yes")
+     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
++    CHECK_C_COMPILER_FLAG(
++      "-march=armv8-a+crc+crypto+sha3+sve2-aes -msve-vector-bits=256"
++      HAS_ARMCRC_SVE2)
++    if(HAS_ARMCRC_SVE2)
++      add_definitions(-DHAVE_ARMCRC_SVE2)
++    endif()
+   endif(HAS_ARMV8_CRC)
+ endif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
+ 
+@@ -607,7 +613,7 @@ if(HAVE_SCHED_GETCPU)
+   add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
+ endif()
+ 
+-check_cxx_symbol_exists(getauxval auvx.h HAVE_AUXV_GETAUXVAL)
++check_cxx_symbol_exists(getauxval "sys/auxv.h" HAVE_AUXV_GETAUXVAL)
+ if(HAVE_AUXV_GETAUXVAL)
+   add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+ endif()
+@@ -936,6 +942,17 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
+     util/crc32c_ppc_asm.S)
+ endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
+ 
++if(HAS_ARMCRC_SVE2)
++  list(APPEND SOURCES
++    util/crc32c_p8c10.S
++    util/crc32c_p8c10_clmul_const.S)
++  set_source_files_properties(
++    util/crc32c_p8c10.S
++    util/crc32c_p8c10_clmul_const.S
++    PROPERTIES COMPILE_FLAGS
++      "-march=armv8-a+crc+crypto+sha3+sve2-aes -msve-vector-bits=256")
++endif()
++
+ if(HAS_ARMV8_CRC)
+   list(APPEND SOURCES
+     util/crc32c_arm64.cc)
 diff --git a/Makefile b/Makefile
-index eff4ddfcc..50d7a4728 100644
+index eff4ddfcc..a3346fcfc 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -15,8 +15,8 @@ endif
- export PYTHON
- 
- CLEAN_FILES = # deliberately empty, so we can append below.
--CFLAGS += ${EXTRA_CFLAGS}
--CXXFLAGS += ${EXTRA_CXXFLAGS}
-+CFLAGS += ${EXTRA_CFLAGS} -fno-plt
-+CXXFLAGS += ${EXTRA_CXXFLAGS} -fno-plt
- LDFLAGS += $(EXTRA_LDFLAGS)
- MACHINE ?= $(shell uname -m)
- ARFLAGS = ${EXTRA_ARFLAGS} rs
-@@ -134,7 +134,11 @@ CFLAGS +=  -DHAVE_POWER8
+@@ -134,6 +134,14 @@ CFLAGS +=  -DHAVE_POWER8
  HAVE_POWER8=1
  endif
  
--ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
-+ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto+sve2 -xc /dev/null 2>&1))
-+CXXFLAGS += -march=armv8-a+crc+crypto+sve2 -DHAVE_ARMCRC_SVE2
-+CFLAGS += -march=armv8-a+crc+crypto+sve2 -DHAVE_ARMCRC_SVE2
++ARMCRC_SVE2_ASMFLAGS = -march=armv8-a+crc+crypto+sha3+sve2-aes -msve-vector-bits=256
++
++ifeq (,$(shell $(CXX) -fsyntax-only $(ARMCRC_SVE2_ASMFLAGS) -xc /dev/null 2>&1))
++CXXFLAGS += -DHAVE_ARMCRC_SVE2
++CFLAGS += -DHAVE_ARMCRC_SVE2
 +HAVE_ARMCRC_SVE2=1
-+else ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
++endif
++
+ ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
  CXXFLAGS += -march=armv8-a+crc+crypto
  CFLAGS += -march=armv8-a+crc+crypto
- ARMCRC_SOURCE=1
-@@ -478,6 +482,11 @@ LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
+@@ -478,6 +486,11 @@ LIB_OBJECTS += $(patsubst %.c, $(OBJ_DIR)/%.o, $(LIB_SOURCES_C))
  LIB_OBJECTS += $(patsubst %.S, $(OBJ_DIR)/%.o, $(LIB_SOURCES_ASM))
  endif
  
@@ -69,22 +97,22 @@ index eff4ddfcc..50d7a4728 100644
  ifeq ($(USE_FOLLY_DISTRIBUTED_MUTEX),1)
    LIB_OBJECTS += $(patsubst %.cpp, $(OBJ_DIR)/%.o, $(FOLLY_SOURCES))
  endif
-@@ -2330,6 +2339,14 @@ $(OBJ_DIR)/util/crc32c_ppc.o: util/crc32c_ppc.c
+@@ -2330,6 +2343,14 @@ $(OBJ_DIR)/util/crc32c_ppc.o: util/crc32c_ppc.c
  $(OBJ_DIR)/util/crc32c_ppc_asm.o: util/crc32c_ppc_asm.S
  	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
  endif
 +
 +ifeq ($(HAVE_ARMCRC_SVE2),1)
 +$(OBJ_DIR)/util/crc32c_p8c10.o: util/crc32c_p8c10.S
-+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++	$(AM_V_CC)$(CC) $(CFLAGS) $(ARMCRC_SVE2_ASMFLAGS) -c $< -o $@
 +
 +$(OBJ_DIR)/util/crc32c_p8c10_clmul_const.o: util/crc32c_p8c10_clmul_const.S
-+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
++	$(AM_V_CC)$(CC) $(CFLAGS) $(ARMCRC_SVE2_ASMFLAGS) -c $< -o $@
 +endif
  $(OBJ_DIR)/%.o: %.cc
  	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
  
-@@ -2381,6 +2398,22 @@ $(OBJ_DIR)/%.S.d: %.S
+@@ -2381,6 +2402,22 @@ $(OBJ_DIR)/%.S.d: %.S
  
  $(DEPFILES_C): %.c.d
  
@@ -108,15 +136,15 @@ index eff4ddfcc..50d7a4728 100644
  depend: $(DEPFILES) $(DEPFILES_C) $(DEPFILES_ASM)
  else
 diff --git a/src.mk b/src.mk
-index c59f5b7e5..380126f08 100644
+index c59f5b7e5..014c542a9 100644
 --- a/src.mk
 +++ b/src.mk
 @@ -302,6 +302,12 @@ LIB_SOURCES_ASM =
  LIB_SOURCES_C =
  endif
  
-+ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto+sve2 -xc /dev/null 2>&1))
-+LIB_SOURCES_ASM = \
++ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto+sha3+sve2-aes -msve-vector-bits=256 -xc /dev/null 2>&1))
++LIB_SOURCES_ASM += \
 +  util/crc32c_p8c10.S \
 +  util/crc32c_p8c10_clmul_const.S
 +endif
@@ -125,32 +153,44 @@ index c59f5b7e5..380126f08 100644
    utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc \
    utilities/transactions/lock/range/range_tree/lib/locktree/keyrange.cc        \
 diff --git a/util/crc32c.cc b/util/crc32c.cc
-index 59acb8c72..eb684d021 100644
+index 59acb8c72..3f4d7d899 100644
 --- a/util/crc32c.cc
 +++ b/util/crc32c.cc
-@@ -12,6 +12,7 @@
- #include "util/crc32c.h"
- 
- #include <stdint.h>
-+#include <sys/auxv.h>
- 
- #include <array>
- #include <utility>
-@@ -24,6 +25,7 @@
+@@ -24,6 +24,20 @@
  #include "util/coding.h"
  #include "util/crc32c_arm64.h"
  #include "util/math.h"
 +#include "util/crc32c_asm.h"
++
++#if defined(HAVE_ARMCRC_SVE2) && defined(__aarch64__) && \
++    defined(__linux__) && defined(ROCKSDB_AUXV_GETAUXVAL_PRESENT)
++#include <asm/hwcap.h>
++#include <sys/auxv.h>
++#include <sys/prctl.h>
++
++#if defined(HWCAP_CRC32) && defined(HWCAP_PMULL) && \
++    defined(HWCAP2_SVE2) && defined(HWCAP2_SVEPMULL) && defined(HWCAP_SHA3) && \
++    defined(PR_SVE_GET_VL) && defined(PR_SVE_VL_LEN)
++#define ROCKSDB_SVE2_RUNTIME_CHECK
++#endif
++#endif
  
  #ifdef __powerpc64__
  #include "util/crc32c_ppc.h"
-@@ -1280,6 +1282,12 @@ static inline Function Choose_Extend() {
+@@ -1280,6 +1294,19 @@ static inline Function Choose_Extend() {
  
  static Function ChosenExtend = Choose_Extend();
  uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
-+#ifdef __ARM_FEATURE_SVE2
-+  unsigned long auxval2 = getauxval(AT_HWCAP2);
-+  if (auxval2 & HWCAP2_SVE2) {
++#ifdef ROCKSDB_SVE2_RUNTIME_CHECK
++  const int sve_vector_length = prctl(PR_SVE_GET_VL);
++  const unsigned long hwcap = getauxval(AT_HWCAP);
++  const unsigned long hwcap2 = getauxval(AT_HWCAP2);
++  if ((hwcap & (HWCAP_CRC32 | HWCAP_PMULL)) ==
++          (HWCAP_CRC32 | HWCAP_PMULL) &&
++      (hwcap2 & (HWCAP2_SVE2 | HWCAP2_SVEPMULL | HWCAP_SHA3))) ==
++          (HWCAP2_SVE2 | HWCAP2_SVEPMULL | HWCAP_SHA3) &&
++      (sve_vector_length & PR_SVE_VL_LEN) == 32 &&
++      crc32c_runtime_check() && crc32c_pmull_runtime_check()) {
 +    return ~crc32c_fusion_p8_c10_asm((char const *)buf, size, ~crc);
 +  }
 +#endif
@@ -183,11 +223,11 @@ index 000000000..0b125595e
 \ No newline at end of file
 diff --git a/util/crc32c_p8c10.S b/util/crc32c_p8c10.S
 new file mode 100644
-index 000000000..aa5e75695
+index 000000000..aa16eb551
 --- /dev/null
 +++ b/util/crc32c_p8c10.S
 @@ -0,0 +1,678 @@
-+    .arch armv8.5-a+crc+sha3+sve2-aes
++    .arch armv8-a+crc+crypto+sha3+sve2-aes
 +    .file   "crc32c_p8c10.S"
 +    .text
 +    .align  4
@@ -865,7 +905,6 @@ index 000000000..aa5e75695
 +.Lp128:
 +    .quad   0x00000000f20c0dfe  // x^159 mod P_crc32c(x) = 0xf20c0dfe
 +    .quad   0x00000000493c7d27  // x^95 mod P_crc32c(x) = 0x493c7d27
-\ No newline at end of file
 diff --git a/util/crc32c_p8c10_clmul_const.S b/util/crc32c_p8c10_clmul_const.S
 new file mode 100644
 index 000000000..53fcd99ff
