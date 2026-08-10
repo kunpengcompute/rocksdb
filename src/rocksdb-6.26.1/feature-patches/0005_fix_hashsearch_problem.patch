@@ -2284,7 +2284,7 @@ index 876f181f1..fdfa85dd0 100644
 +#include <asm/hwcap.h>
 +#endif
 +
-+#ifdef HAVE_SVE2
++#ifdef __ARM_FEATURE_SVE2_BITPERM
 +#include <arm_sve.h>
 +#endif
  
