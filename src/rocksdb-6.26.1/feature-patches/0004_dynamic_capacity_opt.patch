@@ -1,0 +1,747 @@
+From 4fcd0f73382ad76eac5d4e0aca2ae14d3b91cc50 Mon Sep 17 00:00:00 2001
+From: s00842512 <1422711030@qq.com>
+Date: Mon, 3 Aug 2026 19:11:49 +0800
+Subject: [PATCH] feat: implement dynamic capacity optimization for RocksDB
+ 6.26.1
+
+---
+ db/c.cc                                       |  8 +++
+ db/column_family.cc                           | 25 +++++++++
+ db/db_options_test.cc                         | 15 +++++
+ db/version_set.cc                             | 39 ++++++++++---
+ db/version_set.h                              |  1 +
+ db/version_set_test.cc                        | 56 +++++++++++++++++--
+ db_stress_tool/db_stress_common.h             |  1 +
+ db_stress_tool/db_stress_gflags.cc            |  3 +
+ db_stress_tool/db_stress_test_base.cc         |  1 +
+ db_stress_tool/db_stress_tool.cc              |  1 +
+ include/rocksdb/advanced_options.h            |  5 ++
+ include/rocksdb/c.h                           |  4 ++
+ .../org/rocksdb/benchmark/DbBenchmark.java    |  6 ++
+ java/rocksjni/options.cc                      | 43 ++++++++++++++
+ ...edMutableColumnFamilyOptionsInterface.java | 24 ++++++++
+ .../java/org/rocksdb/ColumnFamilyOptions.java | 13 +++++
+ .../rocksdb/MutableColumnFamilyOptions.java   | 12 ++++
+ java/src/main/java/org/rocksdb/Options.java   | 13 +++++
+ .../MutableColumnFamilyOptionsTest.java       |  4 +-
+ options/cf_options.cc                         |  6 ++
+ options/cf_options.h                          |  4 ++
+ options/options.cc                            |  3 +
+ options/options_helper.cc                     |  1 +
+ options/options_settable_test.cc              |  1 +
+ tools/db_bench_tool.cc                        |  4 ++
+ 25 files changed, 280 insertions(+), 13 deletions(-)
+
+diff --git a/db/c.cc b/db/c.cc
+index 89dfa5303..d849f1fa6 100644
+--- a/db/c.cc
++++ b/db/c.cc
+@@ -2657,6 +2657,14 @@ double rocksdb_options_get_max_bytes_for_level_multiplier(
+   return opt->rep.max_bytes_for_level_multiplier;
+ }
+ 
++double rocksdb_options_get_autumn_c(rocksdb_options_t* opt) {
++  return opt->rep.autumn_c;
++}
++
++void rocksdb_options_set_autumn_c(rocksdb_options_t* opt, double n) {
++  opt->rep.autumn_c = n;
++}
++
+ void rocksdb_options_set_max_compaction_bytes(rocksdb_options_t* opt,
+                                               uint64_t n) {
+   opt->rep.max_compaction_bytes = n;
+diff --git a/db/column_family.cc b/db/column_family.cc
+index 2aa1fbd6d..f33398b38 100644
+--- a/db/column_family.cc
++++ b/db/column_family.cc
+@@ -11,6 +11,7 @@
+ 
+ #include <algorithm>
+ #include <cinttypes>
++#include <cmath>
+ #include <limits>
+ #include <sstream>
+ #include <string>
+@@ -284,6 +285,18 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
+     result.max_bytes_for_level_multiplier = 1;
+   }
+ 
++  const double autumn_base_scale =
++      std::pow(result.autumn_c, result.num_levels - 1);
++  const double inverse_autumn_base_scale = 1.0 / autumn_base_scale;
++  if (!std::isfinite(result.autumn_c) || result.autumn_c <= 0.0 ||
++      result.autumn_c > 1.0 || !std::isfinite(autumn_base_scale) ||
++      autumn_base_scale <= 0.0 ||
++      !std::isfinite(inverse_autumn_base_scale)) {
++    ROCKS_LOG_WARN(db_options.logger,
++                   "autumn_c is invalid; resetting it to 1.0");
++    result.autumn_c = 1.0;
++  }
++
+   if (result.level0_file_num_compaction_trigger == 0) {
+     ROCKS_LOG_WARN(db_options.logger,
+                    "level0_file_num_compaction_trigger cannot be 0");
+@@ -1340,6 +1353,18 @@ Status ColumnFamilyData::ValidateOptions(
+     return s;
+   }
+ 
++  const double autumn_base_scale =
++      std::pow(cf_options.autumn_c, cf_options.num_levels - 1);
++  const double inverse_autumn_base_scale = 1.0 / autumn_base_scale;
++  if (!std::isfinite(cf_options.autumn_c) || cf_options.autumn_c <= 0.0 ||
++      cf_options.autumn_c > 1.0 || !std::isfinite(autumn_base_scale) ||
++      autumn_base_scale <= 0.0 ||
++      !std::isfinite(inverse_autumn_base_scale)) {
++    return Status::InvalidArgument(
++        "autumn_c must be finite, in the range (0.0, 1.0], and large enough "
++        "for num_levels");
++  }
++
+   if (cf_options.ttl > 0 && cf_options.ttl != kDefaultTtl) {
+     if (!cf_options.table_factory->IsInstanceOf(
+             TableFactory::kBlockBasedTableName())) {
+diff --git a/db/db_options_test.cc b/db/db_options_test.cc
+index 676550a0d..a83c534eb 100644
+--- a/db/db_options_test.cc
++++ b/db/db_options_test.cc
+@@ -189,6 +189,21 @@ TEST_F(DBOptionsTest, GetLatestCFOptions) {
+             GetMutableCFOptionsMap(dbfull()->GetOptions(handles_[1])));
+ }
+ 
++TEST_F(DBOptionsTest, SetAutumnC) {
++  Options options;
++  options.env = env_;
++  Reopen(options);
++
++  for (const char* value : {"0", "-0.1", "1.1", "nan", "1e-52",
++                            "1e-200"}) {
++    ASSERT_TRUE(dbfull()->SetOptions({{"autumn_c", value}})
++                    .IsInvalidArgument());
++  }
++
++  ASSERT_OK(dbfull()->SetOptions({{"autumn_c", "0.8"}}));
++  ASSERT_EQ(0.8, dbfull()->GetOptions().autumn_c);
++}
++
+ TEST_F(DBOptionsTest, SetMutableTableOptions) {
+   Options options;
+   options.create_if_missing = true;
+diff --git a/db/version_set.cc b/db/version_set.cc
+index 5d9adf4b3..8f0fd5a3a 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -12,6 +12,7 @@
+ #include <algorithm>
+ #include <array>
+ #include <cinttypes>
++#include <cmath>
+ #include <cstdio>
+ #include <list>
+ #include <map>
+@@ -1737,6 +1738,7 @@ VersionStorageInfo::VersionStorageInfo(
+       user_comparator_(user_comparator),
+       // cfd is nullptr if Version is dummy
+       num_levels_(levels),
++      num_levels_in_use_(1),
+       num_non_empty_levels_(0),
+       file_indexer_(user_comparator),
+       compaction_style_(compaction_style),
+@@ -3672,18 +3674,41 @@ void VersionStorageInfo::CalculateBaseBytes(const ImmutableOptions& ioptions,
+   level_max_bytes_.resize(ioptions.num_levels);
+   if (!ioptions.level_compaction_dynamic_level_bytes) {
+     base_level_ = (ioptions.compaction_style == kCompactionStyleLevel) ? 1 : -1;
++    double autumn_base_scale = 1.0;
++    if (compaction_style_ == kCompactionStyleLevel) {
++      num_levels_in_use_ = 1;
++      for (int i = 1; i < num_levels_; ++i) {
++        if (!files_[i].empty()) {
++          num_levels_in_use_ = i;
++        }
++      }
+ 
++      autumn_base_scale =
++          std::pow(options.autumn_c, num_levels_in_use_ - 1);
++      if (!std::isfinite(autumn_base_scale) || autumn_base_scale <= 0.0) {
++        autumn_base_scale = 1.0;
++      }
++    }
+     // Calculate for static bytes base case
+-    for (int i = 0; i < ioptions.num_levels; ++i) {
+-      if (i == 0 && ioptions.compaction_style == kCompactionStyleUniversal) {
+-        level_max_bytes_[i] = options.max_bytes_for_level_base;
+-      } else if (i > 1) {
++    level_max_bytes_[0] = options.max_bytes_for_level_base;
++    for (int i = 1; i < ioptions.num_levels; ++i) {
++      if (i > 1) {
+         level_max_bytes_[i] = MultiplyCheckOverflow(
+-            MultiplyCheckOverflow(level_max_bytes_[i - 1],
+-                                  options.max_bytes_for_level_multiplier),
++            MultiplyCheckOverflow(
++                level_max_bytes_[i - 1],
++                options.max_bytes_for_level_multiplier / autumn_base_scale),
+             options.MaxBytesMultiplerAdditional(i - 1));
+       } else {
+-        level_max_bytes_[i] = options.max_bytes_for_level_base;
++        level_max_bytes_[i] = MultiplyCheckOverflow(
++            options.max_bytes_for_level_base, 1.0 / autumn_base_scale);
++      }
++      if (compaction_style_ == kCompactionStyleLevel) {
++        autumn_base_scale /= options.autumn_c;
++        if (!std::isfinite(autumn_base_scale) || autumn_base_scale <= 0.0) {
++          autumn_base_scale = 1.0;
++        } else {
++          autumn_base_scale = std::min(1.0, autumn_base_scale);
++        }
+       }
+     }
+   } else {
+diff --git a/db/version_set.h b/db/version_set.h
+index 66971519c..21ab0f6e2 100644
+--- a/db/version_set.h
++++ b/db/version_set.h
+@@ -532,6 +532,7 @@ class VersionStorageInfo {
+   const InternalKeyComparator* internal_comparator_;
+   const Comparator* user_comparator_;
+   int num_levels_;            // Number of levels
++  int num_levels_in_use_;     // Number of levels in use
+   int num_non_empty_levels_;  // Number of levels. Any level larger than it
+                               // is guaranteed to be empty.
+   // Per-level max bytes
+diff --git a/db/version_set_test.cc b/db/version_set_test.cc
+index 7e683a900..775774ffc 100644
+--- a/db/version_set_test.cc
++++ b/db/version_set_test.cc
+@@ -93,10 +93,13 @@ class CountingLogger : public Logger {
+ };
+ 
+ Options GetOptionsWithNumLevels(int num_levels,
+-                                std::shared_ptr<CountingLogger> logger) {
++                                std::shared_ptr<CountingLogger> logger,
++                                CompactionStyle compaction_style =
++                                    kCompactionStyleLevel) {
+   Options opt;
+   opt.num_levels = num_levels;
+   opt.info_log = logger;
++  opt.compaction_style = compaction_style;
+   return opt;
+ }
+ 
+@@ -115,14 +118,16 @@ class VersionStorageInfoTestBase : public testing::Test {
+     return InternalKey(ukey, smallest_seq, kTypeValue);
+   }
+ 
+-  explicit VersionStorageInfoTestBase(const Comparator* ucmp)
++  explicit VersionStorageInfoTestBase(
++      const Comparator* ucmp,
++      CompactionStyle compaction_style = kCompactionStyleLevel)
+       : ucmp_(ucmp),
+         icmp_(ucmp_),
+         logger_(new CountingLogger()),
+-        options_(GetOptionsWithNumLevels(6, logger_)),
++        options_(GetOptionsWithNumLevels(6, logger_, compaction_style)),
+         ioptions_(options_),
+         mutable_cf_options_(options_),
+-        vstorage_(&icmp_, ucmp_, 6, kCompactionStyleLevel,
++        vstorage_(&icmp_, ucmp_, 6, compaction_style,
+                   /*src_vstorage=*/nullptr,
+                   /*_force_consistency_checks=*/false) {}
+ 
+@@ -209,19 +214,60 @@ class VersionStorageInfoTest : public VersionStorageInfoTestBase {
+   ~VersionStorageInfoTest() override {}
+ };
+ 
++class VersionStorageInfoUniversalTest : public VersionStorageInfoTestBase {
++ public:
++  VersionStorageInfoUniversalTest()
++      : VersionStorageInfoTestBase(BytewiseComparator(),
++                                   kCompactionStyleUniversal) {}
++};
++
+ TEST_F(VersionStorageInfoTest, MaxBytesForLevelStatic) {
+   ioptions_.level_compaction_dynamic_level_bytes = false;
+   mutable_cf_options_.max_bytes_for_level_base = 10;
+   mutable_cf_options_.max_bytes_for_level_multiplier = 5;
++  mutable_cf_options_.autumn_c = 1.0;
+   Add(4, 100U, "1", "2");
+-  Add(5, 101U, "1", "2");
+ 
+   vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
+   ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 10U);
+   ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 50U);
+   ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 250U);
+   ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1250U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 6250U);
++
++  mutable_cf_options_.autumn_c = 0.8;
++  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 19U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 148U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 925U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 4625U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 23125U);
++
++  Add(5, 101U, "1", "2");
++  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 24U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 234U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 1828U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 11425U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 57125U);
++
++  ASSERT_EQ(0, logger_->log_count);
++}
++
++TEST_F(VersionStorageInfoUniversalTest, AutumnCDoesNotAffectMaxBytes) {
++  ioptions_.level_compaction_dynamic_level_bytes = false;
++  mutable_cf_options_.max_bytes_for_level_base = 10;
++  mutable_cf_options_.max_bytes_for_level_multiplier = 5;
++  mutable_cf_options_.autumn_c = 0.8;
++  Add(4, 100U, "1", "2");
+ 
++  vstorage_.CalculateBaseBytes(ioptions_, mutable_cf_options_);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(0), 10U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(1), 10U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(2), 50U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(3), 250U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(4), 1250U);
++  ASSERT_EQ(vstorage_.MaxBytesForLevel(5), 6250U);
+   ASSERT_EQ(0, logger_->log_count);
+ }
+ 
+diff --git a/db_stress_tool/db_stress_common.h b/db_stress_tool/db_stress_common.h
+index 87840b0e4..b953766a8 100644
+--- a/db_stress_tool/db_stress_common.h
++++ b/db_stress_tool/db_stress_common.h
+@@ -171,6 +171,7 @@ DECLARE_int64(target_file_size_base);
+ DECLARE_int32(target_file_size_multiplier);
+ DECLARE_uint64(max_bytes_for_level_base);
+ DECLARE_double(max_bytes_for_level_multiplier);
++DECLARE_double(autumn_c);
+ DECLARE_int32(range_deletion_width);
+ DECLARE_uint64(rate_limiter_bytes_per_sec);
+ DECLARE_bool(rate_limit_bg_reads);
+diff --git a/db_stress_tool/db_stress_gflags.cc b/db_stress_tool/db_stress_gflags.cc
+index 89ccf5bc4..cac3f8b0b 100644
+--- a/db_stress_tool/db_stress_gflags.cc
++++ b/db_stress_tool/db_stress_gflags.cc
+@@ -521,6 +521,9 @@ DEFINE_uint64(max_bytes_for_level_base,
+ DEFINE_double(max_bytes_for_level_multiplier, 2,
+               "A multiplier to compute max bytes for level-N (N >= 2)");
+ 
++DEFINE_double(autumn_c, 1.0,
++              "A scalar factor on level multiplier for level-N (N >= 2)");
++
+ DEFINE_int32(range_deletion_width, 10,
+              "The width of the range deletion intervals.");
+ 
+diff --git a/db_stress_tool/db_stress_test_base.cc b/db_stress_tool/db_stress_test_base.cc
+index fdb1f2edc..3824af5a8 100644
+--- a/db_stress_tool/db_stress_test_base.cc
++++ b/db_stress_tool/db_stress_test_base.cc
+@@ -2254,6 +2254,7 @@ void StressTest::Open() {
+     options_.max_bytes_for_level_base = FLAGS_max_bytes_for_level_base;
+     options_.max_bytes_for_level_multiplier =
+         FLAGS_max_bytes_for_level_multiplier;
++    options_.autumn_c = FLAGS_autumn_c;
+     options_.level0_stop_writes_trigger = FLAGS_level0_stop_writes_trigger;
+     options_.level0_slowdown_writes_trigger =
+         FLAGS_level0_slowdown_writes_trigger;
+diff --git a/db_stress_tool/db_stress_tool.cc b/db_stress_tool/db_stress_tool.cc
+index 09d57cd9f..ec7fb95e1 100644
+--- a/db_stress_tool/db_stress_tool.cc
++++ b/db_stress_tool/db_stress_tool.cc
+@@ -45,6 +45,7 @@ int db_stress_tool(int argc, char** argv) {
+   SanitizeDoubleParam(&FLAGS_bloom_bits);
+   SanitizeDoubleParam(&FLAGS_memtable_prefix_bloom_size_ratio);
+   SanitizeDoubleParam(&FLAGS_max_bytes_for_level_multiplier);
++  SanitizeDoubleParam(&FLAGS_autumn_c);
+ 
+ #ifndef NDEBUG
+   if (FLAGS_mock_direct_io) {
+diff --git a/include/rocksdb/advanced_options.h b/include/rocksdb/advanced_options.h
+index 5abda9688..61ae06802 100644
+--- a/include/rocksdb/advanced_options.h
++++ b/include/rocksdb/advanced_options.h
+@@ -568,6 +568,11 @@ struct AdvancedColumnFamilyOptions {
+   // Dynamically changeable through SetOptions() API
+   double max_bytes_for_level_multiplier = 10;
+ 
++  // Default: 1.0
++  //
++  // Dynamically changeable through SetOptions() API
++  double autumn_c = 1.0;
++
+   // Different max-size multipliers for different levels.
+   // These are multiplied by max_bytes_for_level_multiplier to arrive
+   // at the max-size of each level.
+diff --git a/include/rocksdb/c.h b/include/rocksdb/c.h
+index 730bef9f2..b1099dee2 100644
+--- a/include/rocksdb/c.h
++++ b/include/rocksdb/c.h
+@@ -1070,6 +1070,10 @@ rocksdb_options_set_max_bytes_for_level_multiplier(rocksdb_options_t*, double);
+ extern ROCKSDB_LIBRARY_API double
+ rocksdb_options_get_max_bytes_for_level_multiplier(rocksdb_options_t*);
+ extern ROCKSDB_LIBRARY_API void
++rocksdb_options_set_autumn_c(rocksdb_options_t*, double);
++extern ROCKSDB_LIBRARY_API double
++rocksdb_options_get_autumn_c(rocksdb_options_t*);
++extern ROCKSDB_LIBRARY_API void
+ rocksdb_options_set_max_bytes_for_level_multiplier_additional(
+     rocksdb_options_t*, int* level_values, size_t num_levels);
+ extern ROCKSDB_LIBRARY_API void rocksdb_options_enable_statistics(
+diff --git a/java/benchmark/src/main/java/org/rocksdb/benchmark/DbBenchmark.java b/java/benchmark/src/main/java/org/rocksdb/benchmark/DbBenchmark.java
+index ff36c74a4..f3701b47b 100644
+--- a/java/benchmark/src/main/java/org/rocksdb/benchmark/DbBenchmark.java
++++ b/java/benchmark/src/main/java/org/rocksdb/benchmark/DbBenchmark.java
+@@ -577,6 +577,7 @@ public class DbBenchmark {
+     options.setMaxBytesForLevelBase(
+         (Integer)flags_.get(Flag.max_bytes_for_level_base));
+     options.setMaxBytesForLevelMultiplier((Double) flags_.get(Flag.max_bytes_for_level_multiplier));
++    options.setAutumnC((Double) flags_.get(Flag.autumn_c));
+     options.setLevelZeroStopWritesTrigger(
+         (Integer)flags_.get(Flag.level0_stop_writes_trigger));
+     options.setLevelZeroSlowdownWritesTrigger(
+@@ -1258,6 +1259,11 @@ public class DbBenchmark {
+         return Double.parseDouble(value);
+       }
+     },
++    autumn_c(1.0d, "Scale factor for level capacity growth") {
++      @Override public Object parseValue(String value) {
++        return Double.parseDouble(value);
++      }
++    },
+     level0_stop_writes_trigger(12,"Number of files in level-0\n" +
+         "\tthat will trigger put stop.") {
+       @Override public Object parseValue(String value) {
+diff --git a/java/rocksjni/options.cc b/java/rocksjni/options.cc
+index 1040e788d..d36a49fbf 100644
+--- a/java/rocksjni/options.cc
++++ b/java/rocksjni/options.cc
+@@ -2997,6 +2997,27 @@ void Java_org_rocksdb_Options_setMaxBytesForLevelMultiplier(
+       static_cast<double>(jmax_bytes_for_level_multiplier);
+ }
+ 
++/*
++ * Class:     org_rocksdb_Options
++ * Method:    autumnC
++ * Signature: (J)D
++ */
++
++jdouble Java_org_rocksdb_Options_autumnC(JNIEnv*, jobject, jlong jhandle) {
++  return reinterpret_cast<ROCKSDB_NAMESPACE::Options*>(jhandle)->autumn_c;
++}
++
++/*
++ * Class:     org_rocksdb_Options
++ * Method:    setAutumnC
++ * Signature: (JD)V
++ */
++void Java_org_rocksdb_Options_setAutumnC(
++    JNIEnv*, jobject, jlong jhandle, jdouble jautumn_c) {
++  reinterpret_cast<ROCKSDB_NAMESPACE::Options*>(jhandle)->autumn_c =
++      static_cast<double>(jautumn_c);
++}
++
+ /*
+  * Class:     org_rocksdb_Options
+  * Method:    maxCompactionBytes
+@@ -4713,6 +4734,28 @@ void Java_org_rocksdb_ColumnFamilyOptions_setMaxBytesForLevelBase(
+       static_cast<int64_t>(jmax_bytes_for_level_base);
+ }
+ 
++/*
++ * Class:     org_rocksdb_ColumnFamilyOptions
++ * Method:    autumnC
++ * Signature: (J)D
++ */
++jdouble Java_org_rocksdb_ColumnFamilyOptions_autumnC(
++    JNIEnv*, jobject, jlong jhandle) {
++  return reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyOptions*>(jhandle)
++      ->autumn_c;
++}
++
++/*
++ * Class:     org_rocksdb_ColumnFamilyOptions
++ * Method:    setAutumnC
++ * Signature: (JD)V
++ */
++void Java_org_rocksdb_ColumnFamilyOptions_setAutumnC(
++    JNIEnv*, jobject, jlong jhandle, jdouble jautumn_c) {
++  reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyOptions*>(jhandle)->autumn_c =
++      static_cast<double>(jautumn_c);
++}
++
+ /*
+  * Class:     org_rocksdb_ColumnFamilyOptions
+  * Method:    levelCompactionDynamicLevelBytes
+diff --git a/java/src/main/java/org/rocksdb/AdvancedMutableColumnFamilyOptionsInterface.java b/java/src/main/java/org/rocksdb/AdvancedMutableColumnFamilyOptionsInterface.java
+index 7adbc2b71..7f458fdb1 100644
+--- a/java/src/main/java/org/rocksdb/AdvancedMutableColumnFamilyOptionsInterface.java
++++ b/java/src/main/java/org/rocksdb/AdvancedMutableColumnFamilyOptionsInterface.java
+@@ -266,6 +266,30 @@ public interface AdvancedMutableColumnFamilyOptionsInterface<
+    */
+   double maxBytesForLevelMultiplier();
+ 
++  /**
++   * A scalar for the maxBytesForLevelMultiplier for each L
++   * DEFAULT: 1.0
++   *
++   * @param autumn The scalars on the max-size multipliers
++   *    for each level
++   * @return the reference to the current options.
++   * <p>
++   * See {@link MutableColumnFamilyOptionsInterface#setAutumnC(double)}
++   */
++  T setAutumnC(double autumn);
++
++  /**
++   * A scalar for the maxBytesForLevelMultiplier for each L
++   * DEFAULT: 1.0
++   *
++   * @return the scalar on the level multiplier between level i and i + 1 can be computed as
++   * k * 1 / c^(L - i), where L is the highest level and k is the base level multiplier (that is,
++   * the last two levels differ by a factor of k in terms of max bytes).
++   * <p>
++   * See {@link MutableColumnFamilyOptionsInterface#autumnC()}
++   */
++  double autumnC();
++
+   /**
+    * Different max-size multipliers for different levels.
+    * These are multiplied by max_bytes_for_level_multiplier to arrive
+diff --git a/java/src/main/java/org/rocksdb/ColumnFamilyOptions.java b/java/src/main/java/org/rocksdb/ColumnFamilyOptions.java
+index ba31bca36..be3673837 100644
+--- a/java/src/main/java/org/rocksdb/ColumnFamilyOptions.java
++++ b/java/src/main/java/org/rocksdb/ColumnFamilyOptions.java
+@@ -494,6 +494,17 @@ public class ColumnFamilyOptions extends RocksObject
+     return maxBytesForLevelMultiplier(nativeHandle_);
+   }
+ 
++  @Override
++  public ColumnFamilyOptions setAutumnC(final double autumnc) {
++    setAutumnC(nativeHandle_, autumnc);
++    return this;
++  }
++
++  @Override
++  public double autumnC() {
++    return autumnC(nativeHandle_);
++  }
++
+   @Override
+   public ColumnFamilyOptions setMaxCompactionBytes(final long maxCompactionBytes) {
+     setMaxCompactionBytes(nativeHandle_, maxCompactionBytes);
+@@ -1249,6 +1260,8 @@ public class ColumnFamilyOptions extends RocksObject
+       long handle);
+   private native void setMaxBytesForLevelMultiplier(long handle, double multiplier);
+   private native double maxBytesForLevelMultiplier(long handle);
++  private native void setAutumnC(long handle, double autumnc);
++  private native double autumnC(long handle);
+   private native void setMaxCompactionBytes(long handle, long maxCompactionBytes);
+   private native long maxCompactionBytes(long handle);
+   private native void setArenaBlockSize(
+diff --git a/java/src/main/java/org/rocksdb/MutableColumnFamilyOptions.java b/java/src/main/java/org/rocksdb/MutableColumnFamilyOptions.java
+index b0d078c70..91377ddcb 100644
+--- a/java/src/main/java/org/rocksdb/MutableColumnFamilyOptions.java
++++ b/java/src/main/java/org/rocksdb/MutableColumnFamilyOptions.java
+@@ -98,6 +98,7 @@ public class MutableColumnFamilyOptions
+     target_file_size_multiplier(ValueType.INT),
+     max_bytes_for_level_base(ValueType.LONG),
+     max_bytes_for_level_multiplier(ValueType.INT),
++    autumn_c(ValueType.DOUBLE),
+     max_bytes_for_level_multiplier_additional(ValueType.INT_ARRAY),
+     ttl(ValueType.LONG),
+     periodic_compaction_seconds(ValueType.LONG);
+@@ -403,6 +404,17 @@ public class MutableColumnFamilyOptions
+       return getDouble(CompactionOption.max_bytes_for_level_multiplier);
+     }
+ 
++    @Override
++    public MutableColumnFamilyOptionsBuilder setAutumnC(
++        final double autumnC) {
++      return setDouble(CompactionOption.autumn_c, autumnC);
++    }
++
++    @Override
++    public double autumnC() {
++      return getDouble(CompactionOption.autumn_c);
++    }
++
+     @Override
+     public MutableColumnFamilyOptionsBuilder setMaxBytesForLevelMultiplierAdditional(
+         final int[] maxBytesForLevelMultiplierAdditional) {
+diff --git a/java/src/main/java/org/rocksdb/Options.java b/java/src/main/java/org/rocksdb/Options.java
+index b12f053aa..5c79f5047 100644
+--- a/java/src/main/java/org/rocksdb/Options.java
++++ b/java/src/main/java/org/rocksdb/Options.java
+@@ -1580,6 +1580,17 @@ public class Options extends RocksObject
+     return this;
+   }
+ 
++  @Override
++  public double autumnC() {
++    return autumnC(nativeHandle_);
++  }
++
++  @Override
++  public Options setAutumnC(final double autumn_c) {
++    setAutumnC(nativeHandle_, autumn_c);
++    return this;
++  }
++
+   @Override
+   public long maxCompactionBytes() {
+     return maxCompactionBytes(nativeHandle_);
+@@ -2391,6 +2402,8 @@ public class Options extends RocksObject
+       long handle);
+   private native void setMaxBytesForLevelMultiplier(long handle, double multiplier);
+   private native double maxBytesForLevelMultiplier(long handle);
++  private native void setAutumnC(long handle, double autumn_c);
++  private native double autumnC(long handle);
+   private native void setMaxCompactionBytes(long handle, long maxCompactionBytes);
+   private native long maxCompactionBytes(long handle);
+   private native void setArenaBlockSize(
+diff --git a/java/src/test/java/org/rocksdb/MutableColumnFamilyOptionsTest.java b/java/src/test/java/org/rocksdb/MutableColumnFamilyOptionsTest.java
+index baa42e786..6113cfd19 100644
+--- a/java/src/test/java/org/rocksdb/MutableColumnFamilyOptionsTest.java
++++ b/java/src/test/java/org/rocksdb/MutableColumnFamilyOptionsTest.java
+@@ -21,12 +21,14 @@ public class MutableColumnFamilyOptionsTest {
+             .setWriteBufferSize(10)
+             .setInplaceUpdateNumLocks(5)
+             .setDisableAutoCompactions(true)
+-            .setParanoidFileChecks(true);
++            .setParanoidFileChecks(true)
++            .setAutumnC(0.8);
+ 
+     assertThat(builder.writeBufferSize()).isEqualTo(10);
+     assertThat(builder.inplaceUpdateNumLocks()).isEqualTo(5);
+     assertThat(builder.disableAutoCompactions()).isEqualTo(true);
+     assertThat(builder.paranoidFileChecks()).isEqualTo(true);
++    assertThat(builder.autumnC()).isEqualTo(0.8);
+   }
+ 
+   @Test(expected = NoSuchElementException.class)
+diff --git a/options/cf_options.cc b/options/cf_options.cc
+index 57c965cc3..be47794d2 100644
+--- a/options/cf_options.cc
++++ b/options/cf_options.cc
+@@ -346,6 +346,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
+          {offsetof(struct MutableCFOptions, max_bytes_for_level_multiplier),
+           OptionType::kDouble, OptionVerificationType::kNormal,
+           OptionTypeFlags::kMutable}},
++        {"autumn_c",
++         {offsetof(struct MutableCFOptions, autumn_c),
++          OptionType::kDouble, OptionVerificationType::kNormal,
++          OptionTypeFlags::kMutable}},
+         {"max_bytes_for_level_multiplier_additional",
+          OptionTypeInfo::Vector<int>(
+              offsetof(struct MutableCFOptions,
+@@ -984,6 +988,8 @@ void MutableCFOptions::Dump(Logger* log) const {
+                  max_bytes_for_level_base);
+   ROCKS_LOG_INFO(log, "           max_bytes_for_level_multiplier: %f",
+                  max_bytes_for_level_multiplier);
++  ROCKS_LOG_INFO(log, "                                 autumn_c: %f",
++                 autumn_c);
+   ROCKS_LOG_INFO(log, "                                      ttl: %" PRIu64,
+                  ttl);
+   ROCKS_LOG_INFO(log, "              periodic_compaction_seconds: %" PRIu64,
+diff --git a/options/cf_options.h b/options/cf_options.h
+index d08096da1..8b59f4de9 100644
+--- a/options/cf_options.h
++++ b/options/cf_options.h
+@@ -154,6 +154,7 @@ struct MutableCFOptions {
+         compression_opts(options.compression_opts),
+         bottommost_compression_opts(options.bottommost_compression_opts),
+         bottommost_temperature(options.bottommost_temperature),
++        autumn_c(options.autumn_c),
+         sample_for_compression(
+             options.sample_for_compression) {  // TODO: is 0 fine here?
+     RefreshDerivedOptions(options.num_levels, options.compaction_style);
+@@ -197,6 +198,7 @@ struct MutableCFOptions {
+         compression(Snappy_Supported() ? kSnappyCompression : kNoCompression),
+         bottommost_compression(kDisableCompressionOption),
+         bottommost_temperature(Temperature::kUnknown),
++        autumn_c(1.0),
+         sample_for_compression(0) {}
+ 
+   explicit MutableCFOptions(const Options& options);
+@@ -269,6 +271,8 @@ struct MutableCFOptions {
+   // through strings yet.
+   Temperature bottommost_temperature;
+ 
++  double autumn_c;
++
+   uint64_t sample_for_compression;
+ 
+   // Derived options
+diff --git a/options/options.cc b/options/options.cc
+index 9a8eee209..c405ebe85 100644
+--- a/options/options.cc
++++ b/options/options.cc
+@@ -67,6 +67,7 @@ AdvancedColumnFamilyOptions::AdvancedColumnFamilyOptions(const Options& options)
+       level_compaction_dynamic_level_bytes(
+           options.level_compaction_dynamic_level_bytes),
+       max_bytes_for_level_multiplier(options.max_bytes_for_level_multiplier),
++      autumn_c(options.autumn_c),
+       max_bytes_for_level_multiplier_additional(
+           options.max_bytes_for_level_multiplier_additional),
+       max_compaction_bytes(options.max_compaction_bytes),
+@@ -253,6 +254,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
+                      level_compaction_dynamic_level_bytes);
+     ROCKS_LOG_HEADER(log, "         Options.max_bytes_for_level_multiplier: %f",
+                      max_bytes_for_level_multiplier);
++    ROCKS_LOG_HEADER(log, "                               Options.autumn_c: %f",
++                     autumn_c);
+     for (size_t i = 0; i < max_bytes_for_level_multiplier_additional.size();
+          i++) {
+       ROCKS_LOG_HEADER(
+diff --git a/options/options_helper.cc b/options/options_helper.cc
+index 9a59b0810..87821b541 100644
+--- a/options/options_helper.cc
++++ b/options/options_helper.cc
+@@ -231,6 +231,7 @@ void UpdateColumnFamilyOptions(const MutableCFOptions& moptions,
+   cf_opts->max_bytes_for_level_base = moptions.max_bytes_for_level_base;
+   cf_opts->max_bytes_for_level_multiplier =
+       moptions.max_bytes_for_level_multiplier;
++  cf_opts->autumn_c = moptions.autumn_c;
+   cf_opts->ttl = moptions.ttl;
+   cf_opts->periodic_compaction_seconds = moptions.periodic_compaction_seconds;
+ 
+diff --git a/options/options_settable_test.cc b/options/options_settable_test.cc
+index 4168c0b96..671cdddc2 100644
+--- a/options/options_settable_test.cc
++++ b/options/options_settable_test.cc
+@@ -465,6 +465,7 @@ TEST_F(OptionsSettableTest, ColumnFamilyOptionsAllFieldsSettable) {
+       "kBZip2Compression:kNoCompression:kZlibCompression:kBZip2Compression:"
+       "kSnappyCompression;"
+       "max_bytes_for_level_base=986;"
++      "autumn_c=0.8;"
+       "bloom_locality=8016;"
+       "target_file_size_base=4294976376;"
+       "memtable_huge_page_size=2557;"
+diff --git a/tools/db_bench_tool.cc b/tools/db_bench_tool.cc
+index 9aebf7dd7..2a01c3ce3 100644
+--- a/tools/db_bench_tool.cc
++++ b/tools/db_bench_tool.cc
+@@ -775,6 +775,9 @@ DEFINE_bool(level_compaction_dynamic_level_bytes, false,
+ DEFINE_double(max_bytes_for_level_multiplier, 10,
+               "A multiplier to compute max bytes for level-N (N >= 2)");
+ 
++DEFINE_double(autumn_c, 1.0,
++              "Used to compute scalar for max bytes level multiplier for level N (N >= 2)");
++
+ static std::vector<int> FLAGS_max_bytes_for_level_multiplier_additional_v;
+ DEFINE_string(max_bytes_for_level_multiplier_additional, "",
+               "A vector that specifies additional fanout per level");
+@@ -4008,6 +4011,7 @@ class Benchmark {
+         FLAGS_level_compaction_dynamic_level_bytes;
+     options.max_bytes_for_level_multiplier =
+         FLAGS_max_bytes_for_level_multiplier;
++    options.autumn_c = FLAGS_autumn_c;
+     Status s =
+         CreateMemTableRepFactory(config_options, &options.memtable_factory);
+     if (!s.ok()) {
+-- 
+2.54.0.windows.1
+
