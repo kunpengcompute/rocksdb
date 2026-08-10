@@ -1,0 +1,2320 @@
+From e0b50ebe078d74b6970ce9cc6750efe7f7edea53 Mon Sep 17 00:00:00 2001
+From: WangKX <wangkaixin14@huawei.com>
+Date: Thu, 6 Aug 2026 10:45:24 +0800
+Subject: [PATCH] feat: implement hashsearch optimization for RocksDB
+
+---
+ Makefile                                      |   6 +-
+ db/builder.cc                                 |   4 +-
+ db/compaction/compaction_job.cc               |   4 +-
+ db/convenience.cc                             |   2 +-
+ db/db_test.cc                                 |  57 ++++-
+ db/db_with_timestamp_basic_test.cc            |   8 +-
+ db/dbformat.h                                 |   2 +-
+ db/external_sst_file_ingestion_job.cc         |   2 +-
+ db/forward_iterator.cc                        |  29 +--
+ db/forward_iterator.h                         |   3 +-
+ db/import_column_family_job.cc                |   2 +-
+ db/plain_table_db_test.cc                     |   2 +-
+ db/repair.cc                                  |   2 +-
+ db/table_cache.cc                             |  56 ++---
+ db/table_cache.h                              | 101 ++++----
+ db/version_builder.cc                         |  12 +-
+ db/version_builder.h                          |  10 +-
+ db/version_edit_handler.cc                    |   2 +-
+ db/version_set.cc                             |  35 +--
+ table/block_based/block.cc                    | 235 ++++++++++++------
+ table/block_based/block.h                     |  98 +++++---
+ table/block_based/block_based_table_reader.cc | 123 +++++----
+ table/block_based/block_based_table_reader.h  |  47 ++--
+ table/block_based/block_prefix_index.cc       |  20 +-
+ table/block_based/block_prefix_index.h        |  12 +-
+ .../block_based/data_block_hash_index_test.cc |   4 +-
+ table/block_based/hash_index_reader.cc        |   4 +-
+ table/meta_blocks.cc                          |  23 +-
+ table/plain/plain_table_factory.cc            |   2 +-
+ table/sst_file_dumper.cc                      |   2 +-
+ table/sst_file_reader.cc                      |   2 +-
+ table/table_builder.h                         |  53 ++--
+ table/table_reader_bench.cc                   |   4 +-
+ table/table_test.cc                           |  96 ++++++-
+ util/coding.cc                                |  40 +++
+ util/coding.h                                 |  19 ++
+ 36 files changed, 717 insertions(+), 406 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index eff4ddfcc..c257ca506 100644
+--- a/Makefile
++++ b/Makefile
+@@ -134,7 +134,11 @@ CFLAGS +=  -DHAVE_POWER8
+ HAVE_POWER8=1
+ endif
+ 
+-ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
++ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto+sve2-bitperm -xc /dev/null 2>&1))
++CXXFLAGS += -march=armv8-a+crc+crypto+sve2-bitperm -DHAVE_ARMCRC_SVE2
++CFLAGS += -march=armv8-a+crc+crypto+sve2-bitperm -DHAVE_ARMCRC_SVE2
++HAVE_ARMCRC_SVE2=1
++else ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
+ CXXFLAGS += -march=armv8-a+crc+crypto
+ CFLAGS += -march=armv8-a+crc+crypto
+ ARMCRC_SOURCE=1
+diff --git a/db/builder.cc b/db/builder.cc
+index c1dadc814..09f4b77f2 100644
+--- a/db/builder.cc
++++ b/db/builder.cc
+@@ -328,8 +328,8 @@ Status BuildTable(
+       ReadOptions read_options;
+       std::unique_ptr<InternalIterator> it(table_cache->NewIterator(
+           read_options, file_options, tboptions.internal_comparator, *meta,
+-          nullptr /* range_del_agg */,
+-          mutable_cf_options.prefix_extractor.get(), nullptr,
++          nullptr /* range_del_agg */, mutable_cf_options.prefix_extractor,
++          nullptr,
+           (internal_stats == nullptr) ? nullptr
+                                       : internal_stats->GetFileReadHist(0),
+           TableReaderCaller::kFlush, /*arena=*/nullptr,
+diff --git a/db/compaction/compaction_job.cc b/db/compaction/compaction_job.cc
+index 5c6fb5d75..f2d09f43b 100644
+--- a/db/compaction/compaction_job.cc
++++ b/db/compaction/compaction_job.cc
+@@ -703,8 +703,8 @@ Status CompactionJob::Run() {
+       }
+     }
+     ColumnFamilyData* cfd = compact_->compaction->column_family_data();
+-    auto prefix_extractor =
+-        compact_->compaction->mutable_cf_options()->prefix_extractor.get();
++    auto& prefix_extractor =
++        compact_->compaction->mutable_cf_options()->prefix_extractor;
+     std::atomic<size_t> next_file_idx(0);
+     auto verify_table = [&](Status& output_status) {
+       while (true) {
+diff --git a/db/convenience.cc b/db/convenience.cc
+index 5af6515c8..097d1fd47 100644
+--- a/db/convenience.cc
++++ b/db/convenience.cc
+@@ -59,7 +59,7 @@ Status VerifySstFileChecksum(const Options& options,
+       new RandomAccessFileReader(std::move(file), file_path));
+   const bool kImmortal = true;
+   s = ioptions.table_factory->NewTableReader(
+-      TableReaderOptions(ioptions, options.prefix_extractor.get(), env_options,
++      TableReaderOptions(ioptions, options.prefix_extractor, env_options,
+                          internal_comparator, false /* skip_filters */,
+                          !kImmortal, false /* force_direct_prefetch */,
+                          -1 /* level */),
+diff --git a/db/db_test.cc b/db/db_test.cc
+index 55bc7e815..da41a267b 100644
+--- a/db/db_test.cc
++++ b/db/db_test.cc
+@@ -3416,7 +3416,40 @@ TEST_F(DBTest, BlockBasedTablePrefixIndexTest) {
+   Flush();
+   ASSERT_OK(Put("k2", "v2"));
+ 
+-  // Reopen it without prefix extractor, make sure everything still works.
++  // Reopen with different prefix extractor, make sure everything still works.
++  // RocksDB should just fall back to the binary index.
++  options.prefix_extractor.reset(NewFixedPrefixTransform(2));
++
++  Reopen(options);
++  ASSERT_EQ("v1", Get("k1"));
++  ASSERT_EQ("v2", Get("k2"));
++
++#ifndef ROCKSDB_LITE
++  // Back to original
++  ASSERT_OK(dbfull()->SetOptions({{"prefix_extractor", "fixed:1"}}));
++  ASSERT_EQ("v1", Get("k1"));
++  ASSERT_EQ("v2", Get("k2"));
++#endif // !ROCKSDB_LITE
++
++  // Same if there's a problem initially loading prefix transform
++  options.prefix_extractor.reset(NewFixedPrefixTransform(1));
++  SyncPoint::GetInstance()->SetCallBack(
++      "BlockBasedTable::Open::ForceNullTablePrefixExtractor",
++      [&](void* arg) { *static_cast<bool*>(arg) = true; });
++  SyncPoint::GetInstance()->EnableProcessing();
++  Reopen(options);
++  ASSERT_EQ("v1", Get("k1"));
++  ASSERT_EQ("v2", Get("k2"));
++  
++#ifndef ROCKSDB_LITE
++  // Change again
++  ASSERT_OK(dbfull()->SetOptions({{"prefix_extractor", "fixed:2"}}));
++  ASSERT_EQ("v1", Get("k1"));
++  ASSERT_EQ("v2", Get("k2"));
++#endif // !ROCKSDB_LITE
++  SyncPoint::GetInstance()->DisableProcessing();
++
++  // Reopen with no prefix extractor, make sure everything still works.
+   // RocksDB should just fall back to the binary index.
+   table_options.index_type = BlockBasedTableOptions::kBinarySearch;
+   options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+@@ -3427,6 +3460,28 @@ TEST_F(DBTest, BlockBasedTablePrefixIndexTest) {
+   ASSERT_EQ("v2", Get("k2"));
+ }
+ 
++TEST_F(DBTest, BlockBasedTablePrefixHashIndexTest) {
++  // create a DB with block prefix index
++  BlockBasedTableOptions table_options;
++  Options options = CurrentOptions();
++  table_options.index_type = BlockBasedTableOptions::kHashSearch;
++  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
++  options.prefix_extractor.reset(NewCappedPrefixTransform(2));
++
++  Reopen(options);
++  ASSERT_OK(Put("kk1", "v1"));
++  ASSERT_OK(Put("kk2", "v2"));
++  ASSERT_OK(Put("kk", "v3"));
++  ASSERT_OK(Put("k", "v4"));
++  Flush();
++
++  ASSERT_EQ("v1", Get("kk1"));
++  ASSERT_EQ("v2", Get("kk2"));
++
++  ASSERT_EQ("v3", Get("kk"));
++  ASSERT_EQ("v4", Get("k"));
++}
++
+ TEST_F(DBTest, BlockBasedTablePrefixIndexTotalOrderSeek) {
+   // create a DB with block prefix index
+   BlockBasedTableOptions table_options;
+diff --git a/db/db_with_timestamp_basic_test.cc b/db/db_with_timestamp_basic_test.cc
+index dfc2949b6..aae7a81d7 100644
+--- a/db/db_with_timestamp_basic_test.cc
++++ b/db/db_with_timestamp_basic_test.cc
+@@ -694,11 +694,13 @@ TEST_P(DBBasicTestWithTimestampTableOptions, SeekWithPrefixLessThanKey) {
+   Close();
+ }
+ 
+-TEST_P(DBBasicTestWithTimestampTableOptions, SeekWithPrefixLongerThanKey) {
++TEST_P(DBBasicTestWithTimestampTableOptions, SeekWithCappedPrefix) {
+   Options options = CurrentOptions();
+   options.env = env_;
+   options.create_if_missing = true;
+-  options.prefix_extractor.reset(NewFixedPrefixTransform(20));
++  // All of the keys or this test must be longer than 3 characters
++  constexpr int kMinKeyLen = 3;
++  options.prefix_extractor.reset(NewCappedPrefixTransform(kMinKeyLen));
+   options.memtable_whole_key_filtering = true;
+   options.memtable_prefix_bloom_size_ratio = 0.1;
+   BlockBasedTableOptions bbto;
+@@ -1416,7 +1418,7 @@ TEST_P(DBBasicTestWithTimestampTableOptions, MultiGetPrefixFilter) {
+   Options options = CurrentOptions();
+   options.env = env_;
+   options.create_if_missing = true;
+-  options.prefix_extractor.reset(NewCappedPrefixTransform(5));
++  options.prefix_extractor.reset(NewCappedPrefixTransform(3));
+   BlockBasedTableOptions bbto;
+   bbto.filter_policy.reset(NewBloomFilterPolicy(10, false));
+   bbto.cache_index_and_filter_blocks = true;
+diff --git a/db/dbformat.h b/db/dbformat.h
+index 1d229adf3..9578f67aa 100644
+--- a/db/dbformat.h
++++ b/db/dbformat.h
+@@ -612,7 +612,7 @@ class IterKey {
+ };
+ 
+ // Convert from a SliceTransform of user keys, to a SliceTransform of
+-// user keys.
++// internal keys.
+ class InternalKeySliceTransform : public SliceTransform {
+  public:
+   explicit InternalKeySliceTransform(const SliceTransform* transform)
+diff --git a/db/external_sst_file_ingestion_job.cc b/db/external_sst_file_ingestion_job.cc
+index 437b40424..c9658f4cd 100644
+--- a/db/external_sst_file_ingestion_job.cc
++++ b/db/external_sst_file_ingestion_job.cc
+@@ -565,7 +565,7 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
+ 
+   status = cfd_->ioptions()->table_factory->NewTableReader(
+       TableReaderOptions(*cfd_->ioptions(),
+-                         sv->mutable_cf_options.prefix_extractor.get(),
++                         sv->mutable_cf_options.prefix_extractor,
+                          env_options_, cfd_->internal_comparator()),
+       std::move(sst_file_reader), file_to_ingest->file_size, &table_reader);
+   if (!status.ok()) {
+diff --git a/db/forward_iterator.cc b/db/forward_iterator.cc
+index 80dd1bb9e..a38e1e4bb 100644
+--- a/db/forward_iterator.cc
++++ b/db/forward_iterator.cc
+@@ -33,11 +33,11 @@ namespace ROCKSDB_NAMESPACE {
+ //     iter.Next()
+ class ForwardLevelIterator : public InternalIterator {
+  public:
+-  ForwardLevelIterator(const ColumnFamilyData* const cfd,
+-                       const ReadOptions& read_options,
+-                       const std::vector<FileMetaData*>& files,
+-                       const SliceTransform* prefix_extractor,
+-                       bool allow_unprepared_value)
++  ForwardLevelIterator(
++      const ColumnFamilyData* const cfd, const ReadOptions& read_options,
++      const std::vector<FileMetaData*>& files,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor,
++      bool allow_unprepared_value)
+       : cfd_(cfd),
+         read_options_(read_options),
+         files_(files),
+@@ -211,7 +211,8 @@ class ForwardLevelIterator : public InternalIterator {
+   Status status_;
+   InternalIterator* file_iter_;
+   PinnedIteratorsManager* pinned_iters_mgr_;
+-  const SliceTransform* prefix_extractor_;
++  // Kept alive by ForwardIterator::sv_->mutable_cf_options
++  const std::shared_ptr<const SliceTransform>& prefix_extractor_;
+   const bool allow_unprepared_value_;
+ };
+ 
+@@ -692,7 +693,7 @@ void ForwardIterator::RebuildIterators(bool refresh_sv) {
+     l0_iters_.push_back(cfd_->table_cache()->NewIterator(
+         read_options_, *cfd_->soptions(), cfd_->internal_comparator(), *l0,
+         read_options_.ignore_range_deletions ? nullptr : &range_del_agg,
+-        sv_->mutable_cf_options.prefix_extractor.get(),
++        sv_->mutable_cf_options.prefix_extractor,
+         /*table_reader_ptr=*/nullptr, /*file_read_hist=*/nullptr,
+         TableReaderCaller::kUserIterator, /*arena=*/nullptr,
+         /*skip_filters=*/false, /*level=*/-1,
+@@ -700,7 +701,7 @@ void ForwardIterator::RebuildIterators(bool refresh_sv) {
+         /*smallest_compaction_key=*/nullptr,
+         /*largest_compaction_key=*/nullptr, allow_unprepared_value_));
+   }
+-  BuildLevelIterators(vstorage);
++  BuildLevelIterators(vstorage, sv_);
+   current_ = nullptr;
+   is_prev_set_ = false;
+ 
+@@ -772,7 +773,7 @@ void ForwardIterator::RenewIterators() {
+         read_options_, *cfd_->soptions(), cfd_->internal_comparator(),
+         *l0_files_new[inew],
+         read_options_.ignore_range_deletions ? nullptr : &range_del_agg,
+-        svnew->mutable_cf_options.prefix_extractor.get(),
++        svnew->mutable_cf_options.prefix_extractor,
+         /*table_reader_ptr=*/nullptr, /*file_read_hist=*/nullptr,
+         TableReaderCaller::kUserIterator, /*arena=*/nullptr,
+         /*skip_filters=*/false, /*level=*/-1,
+@@ -791,7 +792,7 @@ void ForwardIterator::RenewIterators() {
+     DeleteIterator(l);
+   }
+   level_iters_.clear();
+-  BuildLevelIterators(vstorage_new);
++  BuildLevelIterators(vstorage_new, svnew);
+   current_ = nullptr;
+   is_prev_set_ = false;
+   SVCleanup();
+@@ -805,7 +806,8 @@ void ForwardIterator::RenewIterators() {
+   }
+ }
+ 
+-void ForwardIterator::BuildLevelIterators(const VersionStorageInfo* vstorage) {
++void ForwardIterator::BuildLevelIterators(const VersionStorageInfo* vstorage,
++                                          SuperVersion* sv) {
+   level_iters_.reserve(vstorage->num_levels() - 1);
+   for (int32_t level = 1; level < vstorage->num_levels(); ++level) {
+     const auto& level_files = vstorage->LevelFiles(level);
+@@ -821,8 +823,7 @@ void ForwardIterator::BuildLevelIterators(const VersionStorageInfo* vstorage) {
+     } else {
+       level_iters_.push_back(new ForwardLevelIterator(
+           cfd_, read_options_, level_files,
+-          sv_->mutable_cf_options.prefix_extractor.get(),
+-          allow_unprepared_value_));
++          sv->mutable_cf_options.prefix_extractor, allow_unprepared_value_));
+     }
+   }
+ }
+@@ -838,7 +839,7 @@ void ForwardIterator::ResetIncompleteIterators() {
+     l0_iters_[i] = cfd_->table_cache()->NewIterator(
+         read_options_, *cfd_->soptions(), cfd_->internal_comparator(),
+         *l0_files[i], /*range_del_agg=*/nullptr,
+-        sv_->mutable_cf_options.prefix_extractor.get(),
++        sv_->mutable_cf_options.prefix_extractor,
+         /*table_reader_ptr=*/nullptr, /*file_read_hist=*/nullptr,
+         TableReaderCaller::kUserIterator, /*arena=*/nullptr,
+         /*skip_filters=*/false, /*level=*/-1,
+diff --git a/db/forward_iterator.h b/db/forward_iterator.h
+index 99434d858..fa6c77218 100644
+--- a/db/forward_iterator.h
++++ b/db/forward_iterator.h
+@@ -97,7 +97,8 @@ class ForwardIterator : public InternalIterator {
+ 
+   void RebuildIterators(bool refresh_sv);
+   void RenewIterators();
+-  void BuildLevelIterators(const VersionStorageInfo* vstorage);
++  void BuildLevelIterators(const VersionStorageInfo* vstorage,
++                           SuperVersion* sv);
+   void ResetIncompleteIterators();
+   void SeekInternal(const Slice& internal_key, bool seek_to_first);
+   void UpdateCurrent();
+diff --git a/db/import_column_family_job.cc b/db/import_column_family_job.cc
+index 4ddbb5c86..866166e38 100644
+--- a/db/import_column_family_job.cc
++++ b/db/import_column_family_job.cc
+@@ -223,7 +223,7 @@ Status ImportColumnFamilyJob::GetIngestedFileInfo(
+ 
+   status = cfd_->ioptions()->table_factory->NewTableReader(
+       TableReaderOptions(*cfd_->ioptions(),
+-                         sv->mutable_cf_options.prefix_extractor.get(),
++                         sv->mutable_cf_options.prefix_extractor,
+                          env_options_, cfd_->internal_comparator()),
+       std::move(sst_file_reader), file_to_import->file_size, &table_reader);
+   if (!status.ok()) {
+diff --git a/db/plain_table_db_test.cc b/db/plain_table_db_test.cc
+index 0654ce994..fb6f413f9 100644
+--- a/db/plain_table_db_test.cc
++++ b/db/plain_table_db_test.cc
+@@ -372,7 +372,7 @@ class TestPlainTableFactory : public PlainTableFactory {
+         table_reader_options.internal_comparator, encoding_type, file_size,
+         bloom_bits_per_key_, hash_table_ratio_, index_sparseness_, props,
+         std::move(file), table_reader_options.ioptions,
+-        table_reader_options.prefix_extractor, expect_bloom_not_match_,
++        table_reader_options.prefix_extractor.get(), expect_bloom_not_match_,
+         store_index_in_file_, column_family_id_, column_family_name_));
+ 
+     *table = std::move(new_reader);
+diff --git a/db/repair.cc b/db/repair.cc
+index cef0f7369..0799f5d90 100644
+--- a/db/repair.cc
++++ b/db/repair.cc
+@@ -544,7 +544,7 @@ class Repairer {
+       InternalIterator* iter = table_cache_->NewIterator(
+           ropts, file_options_, cfd->internal_comparator(), t->meta,
+           nullptr /* range_del_agg */,
+-          cfd->GetLatestMutableCFOptions()->prefix_extractor.get(),
++          cfd->GetLatestMutableCFOptions()->prefix_extractor,
+           /*table_reader_ptr=*/nullptr, /*file_read_hist=*/nullptr,
+           TableReaderCaller::kRepair, /*arena=*/nullptr, /*skip_filters=*/false,
+           /*level=*/-1, /*max_file_size_for_l0_meta_pin=*/0,
+diff --git a/db/table_cache.cc b/db/table_cache.cc
+index fe549329a..e05bd4cbb 100644
+--- a/db/table_cache.cc
++++ b/db/table_cache.cc
+@@ -101,8 +101,8 @@ Status TableCache::GetTableReader(
+     const InternalKeyComparator& internal_comparator, const FileDescriptor& fd,
+     bool sequential_mode, bool record_read_stats, HistogramImpl* file_read_hist,
+     std::unique_ptr<TableReader>* table_reader,
+-    const SliceTransform* prefix_extractor, bool skip_filters, int level,
+-    bool prefetch_index_and_filter_in_cache,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
++    bool skip_filters, int level, bool prefetch_index_and_filter_in_cache,
+     size_t max_file_size_for_l0_meta_pin, Temperature file_temperature) {
+   std::string fname =
+       TableFileName(ioptions_.cf_paths, fd.GetNumber(), fd.GetPathId());
+@@ -158,7 +158,8 @@ void TableCache::EraseHandle(const FileDescriptor& fd, Cache::Handle* handle) {
+ Status TableCache::FindTable(
+     const ReadOptions& ro, const FileOptions& file_options,
+     const InternalKeyComparator& internal_comparator, const FileDescriptor& fd,
+-    Cache::Handle** handle, const SliceTransform* prefix_extractor,
++    Cache::Handle** handle,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+     const bool no_io, bool record_read_stats, HistogramImpl* file_read_hist,
+     bool skip_filters, int level, bool prefetch_index_and_filter_in_cache,
+     size_t max_file_size_for_l0_meta_pin, Temperature file_temperature) {
+@@ -207,7 +208,8 @@ Status TableCache::FindTable(
+ InternalIterator* TableCache::NewIterator(
+     const ReadOptions& options, const FileOptions& file_options,
+     const InternalKeyComparator& icomparator, const FileMetaData& file_meta,
+-    RangeDelAggregator* range_del_agg, const SliceTransform* prefix_extractor,
++    RangeDelAggregator* range_del_agg, 
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+     TableReader** table_reader_ptr, HistogramImpl* file_read_hist,
+     TableReaderCaller caller, Arena* arena, bool skip_filters, int level,
+     size_t max_file_size_for_l0_meta_pin,
+@@ -241,10 +243,9 @@ InternalIterator* TableCache::NewIterator(
+         !options.table_filter(*table_reader->GetTableProperties())) {
+       result = NewEmptyInternalIterator<Slice>(arena);
+     } else {
+-      result = table_reader->NewIterator(options, prefix_extractor, arena,
+-                                   skip_filters, caller,
+-                                   file_options.compaction_readahead_size,
+-                                   allow_unprepared_value);
++      result = table_reader->NewIterator(
++          options, prefix_extractor.get(), arena, skip_filters, caller,
++          file_options.compaction_readahead_size, allow_unprepared_value);
+     }
+     if (handle != nullptr) {
+       result->RegisterCleanup(&UnrefEntry, cache_, handle);
+@@ -393,13 +394,13 @@ bool TableCache::GetFromRowCache(const Slice& user_key, IterKey& row_cache_key,
+ }
+ #endif  // ROCKSDB_LITE
+ 
+-Status TableCache::Get(const ReadOptions& options,
+-                       const InternalKeyComparator& internal_comparator,
+-                       const FileMetaData& file_meta, const Slice& k,
+-                       GetContext* get_context,
+-                       const SliceTransform* prefix_extractor,
+-                       HistogramImpl* file_read_hist, bool skip_filters,
+-                       int level, size_t max_file_size_for_l0_meta_pin) {
++Status TableCache::Get(
++    const ReadOptions& options,
++    const InternalKeyComparator& internal_comparator,
++    const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
++    HistogramImpl* file_read_hist, bool skip_filters, int level,
++    size_t max_file_size_for_l0_meta_pin) {
+   auto& fd = file_meta.fd;
+   std::string* row_cache_entry = nullptr;
+   bool done = false;
+@@ -449,7 +450,7 @@ Status TableCache::Get(const ReadOptions& options,
+     }
+     if (s.ok()) {
+       get_context->SetReplayLog(row_cache_entry);  // nullptr if no cache.
+-      s = t->Get(options, k, get_context, prefix_extractor, skip_filters);
++      s = t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+       get_context->SetReplayLog(nullptr);
+     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
+       // Couldn't find Table in cache but treat as kFound if no_io set
+@@ -480,13 +481,12 @@ Status TableCache::Get(const ReadOptions& options,
+ }
+ 
+ // Batched version of TableCache::MultiGet.
+-Status TableCache::MultiGet(const ReadOptions& options,
+-                            const InternalKeyComparator& internal_comparator,
+-                            const FileMetaData& file_meta,
+-                            const MultiGetContext::Range* mget_range,
+-                            const SliceTransform* prefix_extractor,
+-                            HistogramImpl* file_read_hist, bool skip_filters,
+-                            int level) {
++Status TableCache::MultiGet(
++    const ReadOptions& options,
++    const InternalKeyComparator& internal_comparator,
++    const FileMetaData& file_meta, const MultiGetContext::Range* mget_range,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
++    HistogramImpl* file_read_hist, bool skip_filters, int level) {
+   auto& fd = file_meta.fd;
+   Status s;
+   TableReader* t = fd.table_reader;
+@@ -557,7 +557,7 @@ Status TableCache::MultiGet(const ReadOptions& options,
+       }
+     }
+     if (s.ok()) {
+-      t->MultiGet(options, &table_range, prefix_extractor, skip_filters);
++      t->MultiGet(options, &table_range, prefix_extractor.get(), skip_filters);
+     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
+       for (auto iter = table_range.begin(); iter != table_range.end(); ++iter) {
+         Status* status = iter->s;
+@@ -610,7 +610,7 @@ Status TableCache::GetTableProperties(
+     const FileOptions& file_options,
+     const InternalKeyComparator& internal_comparator, const FileDescriptor& fd,
+     std::shared_ptr<const TableProperties>* properties,
+-    const SliceTransform* prefix_extractor, bool no_io) {
++    const std::shared_ptr<const SliceTransform>& prefix_extractor, bool no_io) {
+   auto table_reader = fd.table_reader;
+   // table already been pre-loaded?
+   if (table_reader) {
+@@ -635,7 +635,7 @@ Status TableCache::GetTableProperties(
+ size_t TableCache::GetMemoryUsageByTableReader(
+     const FileOptions& file_options,
+     const InternalKeyComparator& internal_comparator, const FileDescriptor& fd,
+-    const SliceTransform* prefix_extractor) {
++    const std::shared_ptr<const SliceTransform>& prefix_extractor) {
+   auto table_reader = fd.table_reader;
+   // table already been pre-loaded?
+   if (table_reader) {
+@@ -662,7 +662,7 @@ void TableCache::Evict(Cache* cache, uint64_t file_number) {
+ uint64_t TableCache::ApproximateOffsetOf(
+     const Slice& key, const FileDescriptor& fd, TableReaderCaller caller,
+     const InternalKeyComparator& internal_comparator,
+-    const SliceTransform* prefix_extractor) {
++    const std::shared_ptr<const SliceTransform>& prefix_extractor) {
+   uint64_t result = 0;
+   TableReader* table_reader = fd.table_reader;
+   Cache::Handle* table_handle = nullptr;
+@@ -689,7 +689,7 @@ uint64_t TableCache::ApproximateOffsetOf(
+ uint64_t TableCache::ApproximateSize(
+     const Slice& start, const Slice& end, const FileDescriptor& fd,
+     TableReaderCaller caller, const InternalKeyComparator& internal_comparator,
+-    const SliceTransform* prefix_extractor) {
++    const std::shared_ptr<const SliceTransform>& prefix_extractor) {
+   uint64_t result = 0;
+   TableReader* table_reader = fd.table_reader;
+   Cache::Handle* table_handle = nullptr;
+diff --git a/db/table_cache.h b/db/table_cache.h
+index e8144dcd0..5fc912c7f 100644
+--- a/db/table_cache.h
++++ b/db/table_cache.h
+@@ -73,9 +73,10 @@ class TableCache {
+       const ReadOptions& options, const FileOptions& toptions,
+       const InternalKeyComparator& internal_comparator,
+       const FileMetaData& file_meta, RangeDelAggregator* range_del_agg,
+-      const SliceTransform* prefix_extractor, TableReader** table_reader_ptr,
+-      HistogramImpl* file_read_hist, TableReaderCaller caller, Arena* arena,
+-      bool skip_filters, int level, size_t max_file_size_for_l0_meta_pin,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor,
++      TableReader** table_reader_ptr, HistogramImpl* file_read_hist,
++      TableReaderCaller caller, Arena* arena, bool skip_filters, int level,
++      size_t max_file_size_for_l0_meta_pin,
+       const InternalKey* smallest_compaction_key,
+       const InternalKey* largest_compaction_key, bool allow_unprepared_value);
+ 
+@@ -89,13 +90,13 @@ class TableCache {
+   //                       recorded
+   // @param skip_filters Disables loading/accessing the filter block
+   // @param level The level this table is at, -1 for "not set / don't know"
+-  Status Get(const ReadOptions& options,
+-             const InternalKeyComparator& internal_comparator,
+-             const FileMetaData& file_meta, const Slice& k,
+-             GetContext* get_context,
+-             const SliceTransform* prefix_extractor = nullptr,
+-             HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
+-             int level = -1, size_t max_file_size_for_l0_meta_pin = 0);
++  Status Get(
++      const ReadOptions& options,
++      const InternalKeyComparator& internal_comparator,
++      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
++      int level = -1, size_t max_file_size_for_l0_meta_pin = 0);
+ 
+   // Return the range delete tombstone iterator of the file specified by
+   // `file_meta`.
+@@ -114,13 +115,13 @@ class TableCache {
+   //                   in the embedded GetContext
+   // @param skip_filters Disables loading/accessing the filter block
+   // @param level The level this table is at, -1 for "not set / don't know"
+-  Status MultiGet(const ReadOptions& options,
+-                  const InternalKeyComparator& internal_comparator,
+-                  const FileMetaData& file_meta,
+-                  const MultiGetContext::Range* mget_range,
+-                  const SliceTransform* prefix_extractor = nullptr,
+-                  HistogramImpl* file_read_hist = nullptr,
+-                  bool skip_filters = false, int level = -1);
++  Status MultiGet(
++      const ReadOptions& options,
++      const InternalKeyComparator& internal_comparator,
++      const FileMetaData& file_meta, const MultiGetContext::Range* mget_range,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      HistogramImpl* file_read_hist = nullptr, bool skip_filters = false, 
++      int level = -1);
+ 
+   // Evict any entry for the specified file number
+   static void Evict(Cache* cache, uint64_t file_number);
+@@ -132,16 +133,16 @@ class TableCache {
+   // Find table reader
+   // @param skip_filters Disables loading/accessing the filter block
+   // @param level == -1 means not specified
+-  Status FindTable(const ReadOptions& ro, const FileOptions& toptions,
+-                   const InternalKeyComparator& internal_comparator,
+-                   const FileDescriptor& file_fd, Cache::Handle**,
+-                   const SliceTransform* prefix_extractor = nullptr,
+-                   const bool no_io = false, bool record_read_stats = true,
+-                   HistogramImpl* file_read_hist = nullptr,
+-                   bool skip_filters = false, int level = -1,
+-                   bool prefetch_index_and_filter_in_cache = true,
+-                   size_t max_file_size_for_l0_meta_pin = 0,
+-                   Temperature file_temperature = Temperature::kUnknown);
++  Status FindTable(
++      const ReadOptions& ro, const FileOptions& toptions,
++      const InternalKeyComparator& internal_comparator,
++      const FileDescriptor& file_fd, Cache::Handle**,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      const bool no_io = false, bool record_read_stats = true,
++      HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
++      int level = -1, bool prefetch_index_and_filter_in_cache = true,
++      size_t max_file_size_for_l0_meta_pin = 0,
++      Temperature file_temperature = Temperature::kUnknown);
+ 
+   // Get TableReader from a cache handle.
+   TableReader* GetTableReaderFromHandle(Cache::Handle* handle);
+@@ -152,12 +153,13 @@ class TableCache {
+   // @returns: `properties` will be reset on success. Please note that we will
+   //            return Status::Incomplete() if table is not present in cache and
+   //            we set `no_io` to be true.
+-  Status GetTableProperties(const FileOptions& toptions,
+-                            const InternalKeyComparator& internal_comparator,
+-                            const FileDescriptor& file_meta,
+-                            std::shared_ptr<const TableProperties>* properties,
+-                            const SliceTransform* prefix_extractor = nullptr,
+-                            bool no_io = false);
++  Status GetTableProperties(
++      const FileOptions& toptions,
++      const InternalKeyComparator& internal_comparator,
++      const FileDescriptor& file_meta,
++      std::shared_ptr<const TableProperties>* properties,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      bool no_io = false);
+ 
+   // Return total memory usage of the table reader of the file.
+   // 0 if table reader of the file is not loaded.
+@@ -165,20 +167,21 @@ class TableCache {
+       const FileOptions& toptions,
+       const InternalKeyComparator& internal_comparator,
+       const FileDescriptor& fd,
+-      const SliceTransform* prefix_extractor = nullptr);
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr);
+ 
+   // Returns approximated offset of a key in a file represented by fd.
+   uint64_t ApproximateOffsetOf(
+       const Slice& key, const FileDescriptor& fd, TableReaderCaller caller,
+       const InternalKeyComparator& internal_comparator,
+-      const SliceTransform* prefix_extractor = nullptr);
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr);
+ 
+   // Returns approximated data size between start and end keys in a file
+   // represented by fd (the start key must not be greater than the end key).
+-  uint64_t ApproximateSize(const Slice& start, const Slice& end,
+-                           const FileDescriptor& fd, TableReaderCaller caller,
+-                           const InternalKeyComparator& internal_comparator,
+-                           const SliceTransform* prefix_extractor = nullptr);
++  uint64_t ApproximateSize(
++      const Slice& start, const Slice& end, const FileDescriptor& fd,
++      TableReaderCaller caller,
++      const InternalKeyComparator& internal_comparator,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr);
+ 
+   // Release the handle from a cache
+   void ReleaseHandle(Cache::Handle* handle);
+@@ -199,16 +202,16 @@ class TableCache {
+ 
+  private:
+   // Build a table reader
+-  Status GetTableReader(const ReadOptions& ro, const FileOptions& file_options,
+-                        const InternalKeyComparator& internal_comparator,
+-                        const FileDescriptor& fd, bool sequential_mode,
+-                        bool record_read_stats, HistogramImpl* file_read_hist,
+-                        std::unique_ptr<TableReader>* table_reader,
+-                        const SliceTransform* prefix_extractor = nullptr,
+-                        bool skip_filters = false, int level = -1,
+-                        bool prefetch_index_and_filter_in_cache = true,
+-                        size_t max_file_size_for_l0_meta_pin = 0,
+-                        Temperature file_temperature = Temperature::kUnknown);
++  Status GetTableReader(
++      const ReadOptions& ro, const FileOptions& file_options,
++      const InternalKeyComparator& internal_comparator,
++      const FileDescriptor& fd, bool sequential_mode, bool record_read_stats, 
++      HistogramImpl* file_read_hist, std::unique_ptr<TableReader>* table_reader,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      bool skip_filters = false, int level = -1,
++      bool prefetch_index_and_filter_in_cache = true,
++      size_t max_file_size_for_l0_meta_pin = 0,
++      Temperature file_temperature = Temperature::kUnknown);
+ 
+   // Create a key prefix for looking up the row cache. The prefix is of the
+   // format row_cache_id + fd_number + seq_no. Later, the user key can be
+diff --git a/db/version_builder.cc b/db/version_builder.cc
+index c90187a18..ce4ae6421 100644
+--- a/db/version_builder.cc
++++ b/db/version_builder.cc
+@@ -943,11 +943,11 @@ class VersionBuilder::Rep {
+     return s;
+   }
+ 
+-  Status LoadTableHandlers(InternalStats* internal_stats, int max_threads,
+-                           bool prefetch_index_and_filter_in_cache,
+-                           bool is_initial_load,
+-                           const SliceTransform* prefix_extractor,
+-                           size_t max_file_size_for_l0_meta_pin) {
++  Status LoadTableHandlers(
++      InternalStats* internal_stats, int max_threads,
++      bool prefetch_index_and_filter_in_cache, bool is_initial_load,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor,
++      size_t max_file_size_for_l0_meta_pin) {
+     assert(table_cache_ != nullptr);
+ 
+     size_t table_cache_capacity = table_cache_->get_cache()->GetCapacity();
+@@ -1070,7 +1070,7 @@ Status VersionBuilder::SaveTo(VersionStorageInfo* vstorage) {
+ Status VersionBuilder::LoadTableHandlers(
+     InternalStats* internal_stats, int max_threads,
+     bool prefetch_index_and_filter_in_cache, bool is_initial_load,
+-    const SliceTransform* prefix_extractor,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+     size_t max_file_size_for_l0_meta_pin) {
+   return rep_->LoadTableHandlers(
+       internal_stats, max_threads, prefetch_index_and_filter_in_cache,
+diff --git a/db/version_builder.h b/db/version_builder.h
+index 5a5c9ea18..ab765747a 100644
+--- a/db/version_builder.h
++++ b/db/version_builder.h
+@@ -39,11 +39,11 @@ class VersionBuilder {
+   bool CheckConsistencyForNumLevels();
+   Status Apply(VersionEdit* edit);
+   Status SaveTo(VersionStorageInfo* vstorage);
+-  Status LoadTableHandlers(InternalStats* internal_stats, int max_threads,
+-                           bool prefetch_index_and_filter_in_cache,
+-                           bool is_initial_load,
+-                           const SliceTransform* prefix_extractor,
+-                           size_t max_file_size_for_l0_meta_pin);
++  Status LoadTableHandlers(
++      InternalStats* internal_stats, int max_threads,
++      bool prefetch_index_and_filter_in_cache, bool is_initial_load,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor,
++      size_t max_file_size_for_l0_meta_pin);
+   uint64_t GetMinOldestBlobFileNumber() const;
+ 
+  private:
+diff --git a/db/version_edit_handler.cc b/db/version_edit_handler.cc
+index 7e6c4e9e7..9f2e6070d 100644
+--- a/db/version_edit_handler.cc
++++ b/db/version_edit_handler.cc
+@@ -531,7 +531,7 @@ Status VersionEditHandler::LoadTables(ColumnFamilyData* cfd,
+       cfd->internal_stats(),
+       version_set_->db_options_->max_file_opening_threads,
+       prefetch_index_and_filter_in_cache, is_initial_load,
+-      cfd->GetLatestMutableCFOptions()->prefix_extractor.get(),
++      cfd->GetLatestMutableCFOptions()->prefix_extractor,
+       MaxFileSizeForL0MetaPin(*cfd->GetLatestMutableCFOptions()));
+   if ((s.IsPathNotFound() || s.IsCorruption()) && no_error_if_files_missing_) {
+     s = Status::OK();
+diff --git a/db/version_set.cc b/db/version_set.cc
+index 5d9adf4b3..f516d361d 100644
+--- a/db/version_set.cc
++++ b/db/version_set.cc
+@@ -888,9 +888,10 @@ class LevelIterator final : public InternalIterator {
+                 const FileOptions& file_options,
+                 const InternalKeyComparator& icomparator,
+                 const LevelFilesBrief* flevel,
+-                const SliceTransform* prefix_extractor, bool should_sample,
+-                HistogramImpl* file_read_hist, TableReaderCaller caller,
+-                bool skip_filters, int level, RangeDelAggregator* range_del_agg,
++                const std::shared_ptr<const SliceTransform>& prefix_extractor,
++                bool should_sample, HistogramImpl* file_read_hist,
++                TableReaderCaller caller, bool skip_filters, int level,
++                RangeDelAggregator* range_del_agg,
+                 const std::vector<AtomicCompactionUnitBoundary>*
+                     compaction_boundaries = nullptr,
+                 bool allow_unprepared_value = false)
+@@ -1040,7 +1041,7 @@ class LevelIterator final : public InternalIterator {
+   // `prefix_extractor_` may be non-null even for total order seek. Checking
+   // this variable is not the right way to identify whether prefix iterator
+   // is used.
+-  const SliceTransform* prefix_extractor_;
++  const std::shared_ptr<const SliceTransform>& prefix_extractor_;
+ 
+   HistogramImpl* file_read_hist_;
+   bool should_sample_;
+@@ -1262,7 +1263,7 @@ Status Version::GetTableProperties(std::shared_ptr<const TableProperties>* tp,
+   auto ioptions = cfd_->ioptions();
+   Status s = table_cache->GetTableProperties(
+       file_options_, cfd_->internal_comparator(), file_meta->fd, tp,
+-      mutable_cf_options_.prefix_extractor.get(), true /* no io */);
++      mutable_cf_options_.prefix_extractor, true /* no io */);
+   if (s.ok()) {
+     return s;
+   }
+@@ -1456,7 +1457,7 @@ size_t Version::GetMemoryUsageByTableReaders() {
+     for (size_t i = 0; i < file_level.num_files; i++) {
+       total_usage += cfd_->table_cache()->GetMemoryUsageByTableReader(
+           file_options_, cfd_->internal_comparator(), file_level.files[i].fd,
+-          mutable_cf_options_.prefix_extractor.get());
++          mutable_cf_options_.prefix_extractor);
+     }
+   }
+   return total_usage;
+@@ -1636,7 +1637,7 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
+       merge_iter_builder->AddIterator(cfd_->table_cache()->NewIterator(
+           read_options, soptions, cfd_->internal_comparator(),
+           *file.file_metadata, range_del_agg,
+-          mutable_cf_options_.prefix_extractor.get(), nullptr,
++          mutable_cf_options_.prefix_extractor, nullptr,
+           cfd_->internal_stats()->GetFileReadHist(0),
+           TableReaderCaller::kUserIterator, arena,
+           /*skip_filters=*/false, /*level=*/0, max_file_size_for_l0_meta_pin_,
+@@ -1660,7 +1661,7 @@ void Version::AddIteratorsForLevel(const ReadOptions& read_options,
+     merge_iter_builder->AddIterator(new (mem) LevelIterator(
+         cfd_->table_cache(), read_options, soptions,
+         cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+-        mutable_cf_options_.prefix_extractor.get(), should_sample_file_read(),
++        mutable_cf_options_.prefix_extractor, should_sample_file_read(),
+         cfd_->internal_stats()->GetFileReadHist(level),
+         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
+         range_del_agg,
+@@ -1695,7 +1696,7 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
+       ScopedArenaIterator iter(cfd_->table_cache()->NewIterator(
+           read_options, file_options, cfd_->internal_comparator(),
+           *file->file_metadata, &range_del_agg,
+-          mutable_cf_options_.prefix_extractor.get(), nullptr,
++          mutable_cf_options_.prefix_extractor, nullptr,
+           cfd_->internal_stats()->GetFileReadHist(0),
+           TableReaderCaller::kUserIterator, &arena,
+           /*skip_filters=*/false, /*level=*/0, max_file_size_for_l0_meta_pin_,
+@@ -1713,7 +1714,7 @@ Status Version::OverlapWithLevelIterator(const ReadOptions& read_options,
+     ScopedArenaIterator iter(new (mem) LevelIterator(
+         cfd_->table_cache(), read_options, file_options,
+         cfd_->internal_comparator(), &storage_info_.LevelFilesBrief(level),
+-        mutable_cf_options_.prefix_extractor.get(), should_sample_file_read(),
++        mutable_cf_options_.prefix_extractor, should_sample_file_read(),
+         cfd_->internal_stats()->GetFileReadHist(level),
+         TableReaderCaller::kUserIterator, IsFilterSkipped(level), level,
+         &range_del_agg));
+@@ -2043,7 +2044,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
+     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
+     *status = table_cache_->Get(
+         read_options, *internal_comparator(), *f->file_metadata, ikey,
+-        &get_context, mutable_cf_options_.prefix_extractor.get(),
++        &get_context, mutable_cf_options_.prefix_extractor,
+         cfd_->internal_stats()->GetFileReadHist(fp.GetHitFileLevel()),
+         IsFilterSkipped(static_cast<int>(fp.GetHitFileLevel()),
+                         fp.IsHitFileLastInLevel()),
+@@ -2212,7 +2213,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
+     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
+     s = table_cache_->MultiGet(
+         read_options, *internal_comparator(), *f->file_metadata, &file_range,
+-        mutable_cf_options_.prefix_extractor.get(),
++        mutable_cf_options_.prefix_extractor,
+         cfd_->internal_stats()->GetFileReadHist(fp.GetHitFileLevel()),
+         IsFilterSkipped(static_cast<int>(fp.GetHitFileLevel()),
+                         fp.IsHitFileLastInLevel()),
+@@ -4367,7 +4368,7 @@ Status VersionSet::ProcessManifestWrites(
+             cfd->internal_stats(), 1 /* max_threads */,
+             true /* prefetch_index_and_filter_in_cache */,
+             false /* is_initial_load */,
+-            mutable_cf_options_ptrs[i]->prefix_extractor.get(),
++            mutable_cf_options_ptrs[i]->prefix_extractor,
+             MaxFileSizeForL0MetaPin(*mutable_cf_options_ptrs[i]));
+         if (!s.ok()) {
+           if (db_options_->paranoid_checks) {
+@@ -5601,7 +5602,7 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const FdWithKeyRange& f,
+     if (table_cache != nullptr) {
+       result = table_cache->ApproximateOffsetOf(
+           key, f.file_metadata->fd, caller, icmp,
+-          v->GetMutableCFOptions().prefix_extractor.get());
++          v->GetMutableCFOptions().prefix_extractor);
+     }
+   }
+   return result;
+@@ -5641,7 +5642,7 @@ uint64_t VersionSet::ApproximateSize(Version* v, const FdWithKeyRange& f,
+   }
+   return table_cache->ApproximateSize(
+       start, end, f.file_metadata->fd, caller, icmp,
+-      v->GetMutableCFOptions().prefix_extractor.get());
++      v->GetMutableCFOptions().prefix_extractor);
+ }
+ 
+ void VersionSet::AddLiveFiles(std::vector<uint64_t>* live_table_files,
+@@ -5733,7 +5734,7 @@ InternalIterator* VersionSet::MakeInputIterator(
+           list[num++] = cfd->table_cache()->NewIterator(
+               read_options, file_options_compactions,
+               cfd->internal_comparator(), *flevel->files[i].file_metadata,
+-              range_del_agg, c->mutable_cf_options()->prefix_extractor.get(),
++              range_del_agg, c->mutable_cf_options()->prefix_extractor,
+               /*table_reader_ptr=*/nullptr,
+               /*file_read_hist=*/nullptr, TableReaderCaller::kCompaction,
+               /*arena=*/nullptr,
+@@ -5749,7 +5750,7 @@ InternalIterator* VersionSet::MakeInputIterator(
+         list[num++] = new LevelIterator(
+             cfd->table_cache(), read_options, file_options_compactions,
+             cfd->internal_comparator(), c->input_levels(which),
+-            c->mutable_cf_options()->prefix_extractor.get(),
++            c->mutable_cf_options()->prefix_extractor,
+             /*should_sample=*/false,
+             /*no per level latency histogram=*/nullptr,
+             TableReaderCaller::kCompaction, /*skip_filters=*/false,
+diff --git a/table/block_based/block.cc b/table/block_based/block.cc
+index 9c2a60844..80f559c9c 100644
+--- a/table/block_based/block.cc
++++ b/table/block_based/block.cc
+@@ -126,10 +126,24 @@ struct DecodeKeyV4 {
+   }
+ };
+ 
+-void DataBlockIter::NextImpl() { ParseNextDataKey<DecodeEntry>(); }
++struct DecodeEntryV4 {
++  inline const char* operator()(const char* p, const char* limit,
++                                uint32_t* shared, uint32_t* non_shared,
++                                uint32_t* value_length) {
++    assert(value_length);
++
++    *value_length = 0;
++    return DecodeKeyV4()(p, limit, shared, non_shared);
++  }
++};
++void DataBlockIter::NextImpl() { 
++  bool is_shared = false;
++  ParseNextDataKey(&is_shared); 
++}
+ 
+-void DataBlockIter::NextOrReportImpl() {
+-  ParseNextDataKey<CheckAndDecodeEntry>();
++void MetaBlockIter::NextImpl() {
++  bool is_shared = false;
++  ParseNextKey<CheckAndDecodeEntry>(&is_shared);
+ }
+ 
+ void IndexBlockIter::NextImpl() { ParseNextIndexKey(); }
+@@ -153,6 +167,27 @@ void IndexBlockIter::PrevImpl() {
+   }
+ }
+ 
++void MetaBlockIter::PrevImpl() {
++  assert(Valid());
++  // Scan backwards to a restart point before current_
++  const uint32_t original = current_;
++  while (GetRestartPoint(restart_index_) >= original) {
++    if (restart_index_ == 0) {
++      // No more entries
++      current_ = restarts_;
++      restart_index_ = num_restarts_;
++      return;
++    }
++    restart_index_--;
++  }
++  SeekToRestartPoint(restart_index_);
++  bool is_shared = false;
++  // Loop until end of current entry hits the start of original entry
++  while (ParseNextKey<CheckAndDecodeEntry>(&is_shared) &&
++         NextEntryOffset() < original) {
++  }
++}
++
+ // Similar to IndexBlockIter::PrevImpl but also caches the prev entries
+ void DataBlockIter::PrevImpl() {
+   assert(Valid());
+@@ -212,7 +247,8 @@ void DataBlockIter::PrevImpl() {
+   SeekToRestartPoint(restart_index_);
+ 
+   do {
+-    if (!ParseNextDataKey<DecodeEntry>()) {
++    bool is_shared = false;
++    if (!ParseNextDataKey(&is_shared)) {
+       break;
+     }
+     Slice current_key = raw_key_.GetKey();
+@@ -250,6 +286,22 @@ void DataBlockIter::SeekImpl(const Slice& target) {
+   FindKeyAfterBinarySeek(seek_key, index, skip_linear_scan);
+ }
+ 
++void MetaBlockIter::SeekImpl(const Slice& target) {
++  Slice seek_key = target;
++  PERF_TIMER_GUARD(block_seek_nanos);
++  if (data_ == nullptr) {  // Not init yet
++    return;
++  }
++  uint32_t index = 0;
++  bool skip_linear_scan = false;
++  bool ok = BinarySeek<DecodeKey>(seek_key, &index, &skip_linear_scan);
++
++  if (!ok) {
++    return;
++  }
++  FindKeyAfterBinarySeek(seek_key, index, skip_linear_scan);
++}
++
+ // Optimized Seek for point lookup for an internal key `target`
+ // target = "seek_user_key @ type | seqno".
+ //
+@@ -309,23 +361,22 @@ bool DataBlockIter::SeekForGetImpl(const Slice& target) {
+   // check if the key is in the restart_interval
+   assert(restart_index < num_restarts_);
+   SeekToRestartPoint(restart_index);
++  current_ = GetRestartPoint(restart_index);
+ 
+-  const char* limit = nullptr;
+-  if (restart_index_ + 1 < num_restarts_) {
+-    limit = data_ + GetRestartPoint(restart_index_ + 1);
+-  } else {
+-    limit = data_ + restarts_;
++  uint32_t limit = restarts_;
++  if (restart_index + 1 < num_restarts_) {
++    limit = GetRestartPoint(restart_index + 1);
+   }
+ 
+-  while (true) {
++  while (current_ < limit) {
++    bool shared;
+     // Here we only linear seek the target key inside the restart interval.
+     // If a key does not exist inside a restart interval, we avoid
+-    // further searching the block content accross restart interval boundary.
++    // further searching the block content across restart interval boundary.
+     //
+-    // TODO(fwu): check the left and write boundary of the restart interval
++    // TODO(fwu): check the left and right boundary of the restart interval
+     // to avoid linear seek a target key that is out of range.
+-    if (!ParseNextDataKey<DecodeEntry>(limit) ||
+-        CompareCurrentKey(target) >= 0) {
++    if (!ParseNextDataKey(&shared) || CompareCurrentKey(target) >= 0) {
+       // we stop at the first potential matching user key.
+       break;
+     }
+@@ -336,7 +387,7 @@ bool DataBlockIter::SeekForGetImpl(const Slice& target) {
+     // 1) there is only one user_key match in the block (otherwise collsion).
+     //    the matching user_key resides in the last restart interval, and it
+     //    is the last key of the restart interval and of the block as well.
+-    //    ParseNextDataKey() skiped it as its [ type | seqno ] is smaller.
++    //    ParseNextKey() skiped it as its [ type | seqno ] is smaller.
+     //
+     // 2) The seek_key is not found in the HashIndex Lookup(), i.e. kNoEntry,
+     //    AND all existing user_keys in the restart interval are smaller than
+@@ -432,20 +483,46 @@ void DataBlockIter::SeekForPrevImpl(const Slice& target) {
+   }
+ }
+ 
++void MetaBlockIter::SeekForPrevImpl(const Slice& target) {
++  PERF_TIMER_GUARD(block_seek_nanos);
++  Slice seek_key = target;
++  if (data_ == nullptr) {   // Not init yet
++    return;
++  }
++  uint32_t index = 0;
++  bool skip_linear_scan = false;
++  bool ok = BinarySeek<DecodeKey>(seek_key, &index, &skip_linear_scan);
++
++  if (!ok) {
++    return;
++  }
++  FindKeyAfterBinarySeek(seek_key, index, skip_linear_scan);
++
++  if (!Valid()) {
++    SeekToLastImpl();
++  } else {
++    while (Valid() && CompareCurrentKey(seek_key) > 0) {
++      PrevImpl();
++    }
++  }
++}
++
+ void DataBlockIter::SeekToFirstImpl() {
+   if (data_ == nullptr) {  // Not init yet
+     return;
+   }
+   SeekToRestartPoint(0);
+-  ParseNextDataKey<DecodeEntry>();
++  bool is_shared = false;
++  ParseNextDataKey(&is_shared);
+ }
+ 
+-void DataBlockIter::SeekToFirstOrReportImpl() {
++void MetaBlockIter::SeekToFirstImpl() {
+   if (data_ == nullptr) {  // Not init yet
+     return;
+   }
+   SeekToRestartPoint(0);
+-  ParseNextDataKey<CheckAndDecodeEntry>();
++  bool is_shared = false;
++  ParseNextKey<CheckAndDecodeEntry>(&is_shared);
+ }
+ 
+ void IndexBlockIter::SeekToFirstImpl() {
+@@ -462,11 +539,24 @@ void DataBlockIter::SeekToLastImpl() {
+     return;
+   }
+   SeekToRestartPoint(num_restarts_ - 1);
+-  while (ParseNextDataKey<DecodeEntry>() && NextEntryOffset() < restarts_) {
++  bool is_shared = false;
++  while (ParseNextDataKey(&is_shared) && NextEntryOffset() < restarts_) {
+     // Keep skipping
+   }
+ }
+ 
++void MetaBlockIter::SeekToLastImpl() {
++  if (data_ == nullptr) {  // Not init yet
++    return;
++  }
++  SeekToRestartPoint(num_restarts_ - 1);
++  bool is_shared = false;
++  while (ParseNextKey<CheckAndDecodeEntry>(&is_shared) && 
++         NextEntryOffset() < restarts_) {
++    // Keep skipping
++  }
++} 
++
+ void IndexBlockIter::SeekToLastImpl() {
+   if (data_ == nullptr) {  // Not init yet
+     return;
+@@ -487,13 +577,15 @@ void BlockIter<TValue>::CorruptionError() {
+   value_.clear();
+ }
+ 
++template <class TValue>
+ template <typename DecodeEntryFunc>
+-bool DataBlockIter::ParseNextDataKey(const char* limit) {
++bool BlockIter<TValue>::ParseNextKey(bool* is_shared) {
+   current_ = NextEntryOffset();
+   const char* p = data_ + current_;
+-  if (!limit) {
+-    limit = data_ + restarts_;  // Restarts come right after data
+-  }
++#ifdef __aarch64__
++  asm volatile("prfm pldl1keep, [%0]" : : "r"(p));
++#endif
++  const char* limit = data_ + restarts_;  // Restarts come right after data
+ 
+   if (p >= limit) {
+     // No more entries to return.  Mark as invalid.
+@@ -510,14 +602,30 @@ bool DataBlockIter::ParseNextDataKey(const char* limit) {
+     return false;
+   } else {
+     if (shared == 0) {
++      *is_shared = false;
+       // If this key doesn't share any bytes with prev key then we don't need
+       // to decode it and can use its address in the block directly.
+       raw_key_.SetKey(Slice(p, non_shared), false /* copy */);
+     } else {
+       // This key share `shared` bytes with prev key, we need to decode it
++      *is_shared = true;
+       raw_key_.TrimAppend(shared, p, non_shared);
+     }
++    value_ = Slice(p + non_shared, value_length);
++    if (shared == 0) {
++      while (restart_index_ + 1 < num_restarts_ &&
++             GetRestartPoint(restart_index_ + 1) < current_) {
++        ++restart_index_;
++      }
++    }
++    // else we are in the middle of a restart interval and the restart_index_
++    // thus has not changed
++    return true;
++  }
++}
+ 
++bool DataBlockIter::ParseNextDataKey(bool* is_shared) {
++  if (ParseNextKey<DecodeEntry>(is_shared)) {
+ #ifndef NDEBUG
+     if (global_seqno_ != kDisableGlobalSequenceNumber) {
+       // If we are reading a file with a global sequence number we should
+@@ -536,64 +644,22 @@ bool DataBlockIter::ParseNextDataKey(const char* limit) {
+       assert(seqno == 0);
+     }
+ #endif  // NDEBUG
+-
+-    value_ = Slice(p + non_shared, value_length);
+-    if (shared == 0) {
+-      while (restart_index_ + 1 < num_restarts_ &&
+-             GetRestartPoint(restart_index_ + 1) < current_) {
+-        ++restart_index_;
+-      }
+-    }
+-    // else we are in the middle of a restart interval and the restart_index_
+-    // thus has not changed
+     return true;
++  } else  {
++    return false;
+   }
+ }
+ 
+ bool IndexBlockIter::ParseNextIndexKey() {
+-  current_ = NextEntryOffset();
+-  const char* p = data_ + current_;
+-  const char* limit = data_ + restarts_;  // Restarts come right after data
+-  if (p >= limit) {
+-    // No more entries to return.  Mark as invalid.
+-    current_ = restarts_;
+-    restart_index_ = num_restarts_;
+-    return false;
+-  }
+-
+-  // Decode next entry
+-  uint32_t shared, non_shared, value_length;
+-  if (value_delta_encoded_) {
+-    p = DecodeKeyV4()(p, limit, &shared, &non_shared);
+-    value_length = 0;
+-  } else {
+-    p = DecodeEntry()(p, limit, &shared, &non_shared, &value_length);
+-  }
+-  if (p == nullptr || raw_key_.Size() < shared) {
+-    CorruptionError();
+-    return false;
+-  }
+-  if (shared == 0) {
+-    // If this key doesn't share any bytes with prev key then we don't need
+-    // to decode it and can use its address in the block directly.
+-    raw_key_.SetKey(Slice(p, non_shared), false /* copy */);
+-  } else {
+-    // This key share `shared` bytes with prev key, we need to decode it
+-    raw_key_.TrimAppend(shared, p, non_shared);
+-  }
+-  value_ = Slice(p + non_shared, value_length);
+-  if (shared == 0) {
+-    while (restart_index_ + 1 < num_restarts_ &&
+-           GetRestartPoint(restart_index_ + 1) < current_) {
+-      ++restart_index_;
++  bool is_shared = false;
++  bool ok = (value_delta_encoded_) ? ParseNextKey<DecodeEntryV4>(&is_shared)
++                                   : ParseNextKey<DecodeEntry>(&is_shared);
++  if (ok) {
++    if (value_delta_encoded_ || global_seqno_state_ != nullptr) {
++      DecodeCurrentValue(is_shared);
+     }
+   }
+-  // else we are in the middle of a restart interval and the restart_index_
+-  // thus has not changed
+-  if (value_delta_encoded_ || global_seqno_state_ != nullptr) {
+-    DecodeCurrentValue(shared);
+-  }
+-  return true;
++  return ok;
+ }
+ 
+ // The format:
+@@ -604,15 +670,15 @@ bool IndexBlockIter::ParseNextIndexKey() {
+ // where, k is key, v is value, and its encoding is in parenthesis.
+ // The format of each key is (shared_size, non_shared_size, shared, non_shared)
+ // The format of each value, i.e., block handle, is (offset, size) whenever the
+-// shared_size is 0, which included the first entry in each restart point.
++// is_shared  is false, which included the first entry in each restart point.
+ // Otherwise the format is delta-size = block handle size - size of last block
+ // handle.
+-void IndexBlockIter::DecodeCurrentValue(uint32_t shared) {
++void IndexBlockIter::DecodeCurrentValue(bool is_shared) {
+   Slice v(value_.data(), data_ + restarts_ - value_.data());
+   // Delta encoding is used if `shared` != 0.
+   Status decode_s __attribute__((__unused__)) = decoded_value_.DecodeFrom(
+       &v, have_first_key_,
+-      (value_delta_encoded_ && shared) ? &decoded_value_.handle : nullptr);
++      (value_delta_encoded_ && is_shared) ? &decoded_value_.handle : nullptr);
+   assert(decode_s.ok());
+   value_ = Slice(value_.data(), v.data() - value_.data());
+ 
+@@ -970,6 +1036,21 @@ Block::Block(BlockContents&& contents, size_t read_amp_bytes_per_bit,
+   }
+ }
+ 
++MetaBlockIter* Block::NewMetaIterator(bool block_contents_pinned) {
++  MetaBlockIter* iter = new MetaBlockIter();
++  if (size_ < 2 * sizeof(uint32_t)) {
++    iter->Invalidate(Status::Corruption("bad block contents"));
++    return iter;
++  } else if (num_restarts_ == 0) {
++    // Empty block.
++    iter->Invalidate(Status::OK());
++  } else {
++    iter->Initialize(data_, restart_offset_, num_restarts_,
++                     block_contents_pinned);
++  }
++  return iter;
++}
++
+ DataBlockIter* Block::NewDataIterator(const Comparator* raw_ucmp,
+                                       SequenceNumber global_seqno,
+                                       DataBlockIter* iter, Statistics* stats,
+diff --git a/table/block_based/block.h b/table/block_based/block.h
+index 000f64842..284c32e7c 100644
+--- a/table/block_based/block.h
++++ b/table/block_based/block.h
+@@ -34,6 +34,7 @@ template <class TValue>
+ class BlockIter;
+ class DataBlockIter;
+ class IndexBlockIter;
++class MetaBlockIter;
+ class BlockPrefixIndex;
+ 
+ // BlockReadAmpBitmap is a bitmap that map the ROCKSDB_NAMESPACE::Block data
+@@ -192,6 +193,21 @@ class Block {
+                                  Statistics* stats = nullptr,
+                                  bool block_contents_pinned = false);
+ 
++  // Returns an MetaBlockIter for iterating over blocks containing metadata
++  // (like Properties blocks).  Unlike data blocks, the keys for these blocks
++  // do not contain sequence numbers, do not use a user-defined comparator, and 
++  // do not track read amplification/statistics.  Additionally, MetaBlocks will
++  // not assert if the block is formatted improperly.
++  //
++  // If `block_contents_pinned` is true, the caller will guarantee that when
++  // the cleanup functions are transferred from the iterator to other
++  // classes, e.g. PinnableSlice, the pointer to the bytes will still be 
++  // valid. Either the iterator holds cache handle or ownership of some resource
++  // and release them in a release function, or caller is sure that the data 
++  // will not go away (for example, it's from mmapped file which will not be
++  // closed).
++  MetaBlockIter* NewMetaIterator(bool block_contents_pinned = false);
++
+   // raw_ucmp is a raw (i.e., not wrapped by `UserComparatorWrapper`) user key
+   // comparator.
+   //
+@@ -269,10 +285,9 @@ class BlockIter : public InternalIteratorBase<TValue> {
+ 
+   // Makes Valid() return false, status() return `s`, and Seek()/Prev()/etc do
+   // nothing. Calls cleanup functions.
+-  void InvalidateBase(Status s) {
++  virtual void Invalidate(const Status& s) {
+     // Assert that the BlockIter is never deleted while Pinning is Enabled.
+-    assert(!pinned_iters_mgr_ ||
+-           (pinned_iters_mgr_ && !pinned_iters_mgr_->PinningEnabled()));
++    assert(!pinned_iters_mgr_ || !pinned_iters_mgr_->PinningEnabled());
+ 
+     data_ = nullptr;
+     current_ = restarts_;
+@@ -386,6 +401,9 @@ class BlockIter : public InternalIteratorBase<TValue> {
+   virtual void NextImpl() = 0;
+   virtual void PrevImpl() = 0;
+ 
++  template <typename DecodeEntryFunc>
++  inline bool ParseNextKey(bool* is_shared);
++
+   InternalKeyComparator icmp() {
+     return InternalKeyComparator(raw_ucmp_, false /* named */);
+   }
+@@ -519,24 +537,8 @@ class DataBlockIter final : public BlockIter<Slice> {
+     return res;
+   }
+ 
+-  // Try to advance to the next entry in the block. If there is data corruption
+-  // or error, report it to the caller instead of aborting the process. May
+-  // incur higher CPU overhead because we need to perform check on every entry.
+-  void NextOrReport() {
+-    NextOrReportImpl();
+-    UpdateKey();
+-  }
+-
+-  // Try to seek to the first entry in the block. If there is data corruption
+-  // or error, report it to caller instead of aborting the process. May incur
+-  // higher CPU overhead because we need to perform check on every entry.
+-  void SeekToFirstOrReport() {
+-    SeekToFirstOrReportImpl();
+-    UpdateKey();
+-  }
+-
+-  void Invalidate(Status s) {
+-    InvalidateBase(s);
++  void Invalidate(const Status& s) override {
++    BlockIter::Invalidate(s);
+     // Clear prev entries cache.
+     prev_entries_keys_buff_.clear();
+     prev_entries_.clear();
+@@ -544,12 +546,14 @@ class DataBlockIter final : public BlockIter<Slice> {
+   }
+ 
+  protected:
+-  virtual void SeekToFirstImpl() override;
+-  virtual void SeekToLastImpl() override;
+-  virtual void SeekImpl(const Slice& target) override;
+-  virtual void SeekForPrevImpl(const Slice& target) override;
+-  virtual void NextImpl() override;
+-  virtual void PrevImpl() override;
++  friend Block;
++  inline bool ParseNextDataKey(bool* is_shared);
++  void SeekToFirstImpl() override;
++  void SeekToLastImpl() override;
++  void SeekImpl(const Slice& target) override;
++  void SeekForPrevImpl(const Slice& target) override;
++  void NextImpl() override;
++  void PrevImpl() override;
+ 
+  private:
+   // read-amp bitmap
+@@ -582,12 +586,38 @@ class DataBlockIter final : public BlockIter<Slice> {
+ 
+   DataBlockHashIndex* data_block_hash_index_;
+ 
+-  template <typename DecodeEntryFunc>
+-  inline bool ParseNextDataKey(const char* limit = nullptr);
+-
+   bool SeekForGetImpl(const Slice& target);
+-  void NextOrReportImpl();
+-  void SeekToFirstOrReportImpl();
++};
++
++// Iterator over MetaBlocks.  MetaBlocks are similar to Data Blocks and
++// are used to store Properties associated with table.
++// Meta blocks always store user keys (no sequence number) and always
++// use the BytewiseComparator.  Additionally, MetaBlock accesses are 
++// not recorded in the Statistics or for Read-Amplification.
++class MetaBlockIter final : public BlockIter<Slice> {
++  public:
++   MetaBlockIter() : BlockIter() { raw_key_.SetIsUserKey(true); }
++   void Initialize(const char* data, uint32_t restarts, uint32_t num_restarts,
++                   bool block_contents_pinned) {
++     // Initializes the iterator with a BytewiseComparator and
++     // the raw key being a user key.
++     InitializeBase(BytewiseComparator(), data, restarts, num_restarts,
++                    kDisableGlobalSequenceNumber, block_contents_pinned);
++     raw_key_.SetIsUserKey(true);
++   }
++
++   Slice value() const override {
++     assert(Valid());
++     return value_;
++   }
++
++  protected:
++   void SeekToFirstImpl() override;
++   void SeekToLastImpl() override;
++   void SeekImpl(const Slice& target) override;
++   void SeekForPrevImpl(const Slice& target) override;
++   void NextImpl() override;
++   void PrevImpl() override;
+ };
+ 
+ class IndexBlockIter final : public BlockIter<IndexValue> {
+@@ -635,8 +665,6 @@ class IndexBlockIter final : public BlockIter<IndexValue> {
+     }
+   }
+ 
+-  void Invalidate(Status s) { InvalidateBase(s); }
+-
+   bool IsValuePinned() const override {
+     return global_seqno_state_ != nullptr ? false : BlockIter::IsValuePinned();
+   }
+@@ -713,7 +741,7 @@ class IndexBlockIter final : public BlockIter<IndexValue> {
+ 
+   // When value_delta_encoded_ is enabled it decodes the value which is assumed
+   // to be BlockHandle and put it to decoded_value_
+-  inline void DecodeCurrentValue(uint32_t shared);
++  inline void DecodeCurrentValue(bool is_shared);
+ };
+ 
+ }  // namespace ROCKSDB_NAMESPACE
+diff --git a/table/block_based/block_based_table_reader.cc b/table/block_based/block_based_table_reader.cc
+index ad8ee53f9..ee381330d 100644
+--- a/table/block_based/block_based_table_reader.cc
++++ b/table/block_based/block_based_table_reader.cc
+@@ -125,8 +125,9 @@ void ReleaseCachedEntry(void* arg, void* h) {
+ // For hash based index, return true if prefix_extractor and
+ // prefix_extractor_block mismatch, false otherwise. This flag will be used
+ // as total_order_seek via NewIndexIterator
+-bool PrefixExtractorChanged(const TableProperties* table_properties,
+-                            const SliceTransform* prefix_extractor) {
++inline bool PrefixExtractorChangedHelper(
++    const TableProperties* table_properties,
++    const SliceTransform* prefix_extractor) {
+   // BlockBasedTableOptions::kHashSearch requires prefix_extractor to be set.
+   // Turn off hash index in prefix_extractor is not set; if  prefix_extractor
+   // is set but prefix_extractor_block is not set, also disable hash index
+@@ -540,7 +541,7 @@ Status BlockBasedTable::Open(
+     const InternalKeyComparator& internal_comparator,
+     std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
+     std::unique_ptr<TableReader>* table_reader,
+-    const SliceTransform* prefix_extractor,
++    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+     const bool prefetch_index_and_filter_in_cache, const bool skip_filters,
+     const int level, const bool immortal_table,
+     const SequenceNumber largest_seqno, const bool force_direct_prefetch,
+@@ -615,12 +616,6 @@ Status BlockBasedTable::Open(
+   rep->file = std::move(file);
+   rep->footer = footer;
+   rep->hash_index_allow_collision = table_options.hash_index_allow_collision;
+-  // We need to wrap data with internal_prefix_transform to make sure it can
+-  // handle prefix correctly.
+-  if (prefix_extractor != nullptr) {
+-    rep->internal_prefix_transform.reset(
+-        new InternalKeySliceTransform(prefix_extractor));
+-  }
+ 
+   // For fully portable/stable cache keys, we need to read the properties
+   // block before setting up cache keys. TODO: consider setting up a bootstrap
+@@ -651,6 +646,37 @@ Status BlockBasedTable::Open(
+     return s;
+   }
+ 
++  bool force_null_table_prefix_extractor = false;
++  TEST_SYNC_POINT_CALLBACK(
++      "BlockBasedTable::Open::ForceNullTablePrefixExtractor",
++      &force_null_table_prefix_extractor);
++  if (force_null_table_prefix_extractor) {
++    assert(!rep->table_prefix_extractor);
++  } else if (!PrefixExtractorChangedHelper(rep->table_properties.get(),
++                                           prefix_extractor.get())) {
++    // Establish fast path for unchanged prefix_extractor
++    rep->table_prefix_extractor = prefix_extractor;
++  } else {
++    // Current prefix_extractor doesn't match table
++#ifndef ROCKSDB_LITE
++    if (rep->table_properties) {
++      //**TODO: If/When the DBOptions has a registry in it, the ConfigOptions
++      // will need to use it
++      ConfigOptions config_options;
++      Status st = SliceTransform::CreateFromString(
++          config_options, rep->table_properties->prefix_extractor_name,
++          &(rep->table_prefix_extractor));
++      if (!st.ok()) {
++        //**TODO: Should this be error be returned or swallowed?
++        ROCKS_LOG_ERROR(rep->ioptions.logger,
++                        "Failed to create prefix extractor[%s]: %s",
++                        rep->table_properties->prefix_extractor_name.c_str(),
++                        st.ToString().c_str());
++      }
++    }
++#endif  // ROCKSDB_LITE
++  }
++
+   // With properties loaded, we can set up portable/stable cache keys if
+   // necessary info is available
+   std::string db_session_id;
+@@ -837,23 +863,6 @@ Status BlockBasedTable::ReadPropertiesBlock(
+     ROCKS_LOG_ERROR(rep_->ioptions.logger,
+                     "Cannot find Properties block from file.");
+   }
+-#ifndef ROCKSDB_LITE
+-  if (rep_->table_properties) {
+-    //**TODO: If/When the DBOptions has a registry in it, the ConfigOptions
+-    // will need to use it
+-    ConfigOptions config_options;
+-    Status st = SliceTransform::CreateFromString(
+-        config_options, rep_->table_properties->prefix_extractor_name,
+-        &(rep_->table_prefix_extractor));
+-    if (!st.ok()) {
+-      //**TODO: Should this be error be returned or swallowed?
+-      ROCKS_LOG_ERROR(rep_->ioptions.logger,
+-                      "Failed to create prefix extractor[%s]: %s",
+-                      rep_->table_properties->prefix_extractor_name.c_str(),
+-                      st.ToString().c_str());
+-    }
+-  }
+-#endif  // ROCKSDB_LITE
+ 
+   // Read the table properties, if provided.
+   if (rep_->table_properties) {
+@@ -1159,8 +1168,12 @@ Status BlockBasedTable::ReadMetaIndexBlock(
+ 
+   *metaindex_block = std::move(metaindex);
+   // meta block uses bytewise comparator.
++#ifdef __aarch64__
++  iter->reset(metaindex_block->get()->NewMetaIterator());
++#else
+   iter->reset(metaindex_block->get()->NewDataIterator(
+       BytewiseComparator(), kDisableGlobalSequenceNumber));
++#endif
+   return Status::OK();
+ }
+ 
+@@ -2207,6 +2220,17 @@ bool BlockBasedTable::PrefixMayMatch(
+   return may_match;
+ }
+ 
++bool BlockBasedTable::PrefixExtractorChanged(
++    const SliceTransform* prefix_extractor) const {
++  if (prefix_extractor == nullptr) {
++    return true;
++  } else if (prefix_extractor == rep_->table_prefix_extractor.get()) {
++    return false;
++  } else {
++    return PrefixExtractorChangedHelper(rep_->table_properties.get(),
++                                        prefix_extractor);
++  }
++}
+ 
+ InternalIterator* BlockBasedTable::NewIterator(
+     const ReadOptions& read_options, const SliceTransform* prefix_extractor,
+@@ -2214,8 +2238,7 @@ InternalIterator* BlockBasedTable::NewIterator(
+     size_t compaction_readahead_size, bool allow_unprepared_value) {
+   BlockCacheLookupContext lookup_context{caller};
+   bool need_upper_bound_check =
+-      read_options.auto_prefix_mode ||
+-      PrefixExtractorChanged(rep_->table_properties.get(), prefix_extractor);
++      read_options.auto_prefix_mode || PrefixExtractorChanged(prefix_extractor);
+   std::unique_ptr<InternalIteratorBase<IndexValue>> index_iter(NewIndexIterator(
+       read_options,
+       need_upper_bound_check &&
+@@ -2269,9 +2292,8 @@ bool BlockBasedTable::FullFilterKeyMayMatch(
+     may_match =
+         filter->KeyMayMatch(user_key_without_ts, prefix_extractor, kNotValid,
+                             no_io, const_ikey_ptr, get_context, lookup_context);
+-  } else if (!read_options.total_order_seek && prefix_extractor &&
+-             rep_->table_properties->prefix_extractor_name ==
+-                 prefix_extractor->AsString() &&
++  } else if (!read_options.total_order_seek && 
++             !PrefixExtractorChanged(prefix_extractor) &&
+              prefix_extractor->InDomain(user_key_without_ts) &&
+              !filter->PrefixMayMatch(
+                  prefix_extractor->Transform(user_key_without_ts),
+@@ -2311,9 +2333,8 @@ void BlockBasedTable::FullFilterKeysMayMatch(
+       PERF_COUNTER_BY_LEVEL_ADD(bloom_filter_useful, filtered_keys,
+                                 rep_->level);
+     }
+-  } else if (!read_options.total_order_seek && prefix_extractor &&
+-             rep_->table_properties->prefix_extractor_name ==
+-                 prefix_extractor->AsString()) {
++  } else if (!read_options.total_order_seek &&
++             !PrefixExtractorChanged(prefix_extractor)) {
+     filter->PrefixesMayMatch(range, prefix_extractor, kNotValid, false,
+                              lookup_context);
+     RecordTick(rep_->ioptions.stats, BLOOM_FILTER_PREFIX_CHECKED, before_keys);
+@@ -2364,8 +2385,7 @@ Status BlockBasedTable::Get(const ReadOptions& read_options, const Slice& key,
+     // BlockPrefixIndex. Only do this check when index_type is kHashSearch.
+     bool need_upper_bound_check = false;
+     if (rep_->index_type == BlockBasedTableOptions::kHashSearch) {
+-      need_upper_bound_check = PrefixExtractorChanged(
+-          rep_->table_properties.get(), prefix_extractor);
++      need_upper_bound_check = PrefixExtractorChanged(prefix_extractor);
+     }
+     auto iiter =
+         NewIndexIterator(read_options, need_upper_bound_check, &iiter_on_stack,
+@@ -2549,8 +2569,7 @@ void BlockBasedTable::MultiGet(const ReadOptions& read_options,
+     // BlockPrefixIndex. Only do this check when index_type is kHashSearch.
+     bool need_upper_bound_check = false;
+     if (rep_->index_type == BlockBasedTableOptions::kHashSearch) {
+-      need_upper_bound_check = PrefixExtractorChanged(
+-          rep_->table_properties.get(), prefix_extractor);
++      need_upper_bound_check = PrefixExtractorChanged(prefix_extractor);
+     }
+     auto iiter =
+         NewIndexIterator(read_options, need_upper_bound_check, &iiter_on_stack,
+@@ -3176,36 +3195,16 @@ Status BlockBasedTable::CreateIndexReader(
+                                              lookup_context, index_reader);
+     }
+     case BlockBasedTableOptions::kHashSearch: {
+-      std::unique_ptr<Block> metaindex_guard;
+-      std::unique_ptr<InternalIterator> metaindex_iter_guard;
+-      auto meta_index_iter = preloaded_meta_index_iter;
+-      bool should_fallback = false;
+-      if (rep_->internal_prefix_transform.get() == nullptr) {
++      if (!rep_->table_prefix_extractor) {
+         ROCKS_LOG_WARN(rep_->ioptions.logger,
+-                       "No prefix extractor passed in. Fall back to binary"
+-                       " search index.");
+-        should_fallback = true;
+-      } else if (meta_index_iter == nullptr) {
+-        auto s = ReadMetaIndexBlock(ro, prefetch_buffer, &metaindex_guard,
+-                                    &metaindex_iter_guard);
+-        if (!s.ok()) {
+-          // we simply fall back to binary search in case there is any
+-          // problem with prefix hash index loading.
+-          ROCKS_LOG_WARN(rep_->ioptions.logger,
+-                         "Unable to read the metaindex block."
+-                         " Fall back to binary search index.");
+-          should_fallback = true;
+-        }
+-        meta_index_iter = metaindex_iter_guard.get();
+-      }
+-
+-      if (should_fallback) {
++                       "Missing prefix extractor for hash index. Fall back to"
++                       " binary search index.");
+         return BinarySearchIndexReader::Create(this, ro, prefetch_buffer,
+                                                use_cache, prefetch, pin,
+                                                lookup_context, index_reader);
+       } else {
+         return HashIndexReader::Create(this, ro, prefetch_buffer,
+-                                       meta_index_iter, use_cache, prefetch,
++                                       preloaded_meta_index_iter, use_cache, prefetch,
+                                        pin, lookup_context, index_reader);
+       }
+     }
+diff --git a/table/block_based/block_based_table_reader.h b/table/block_based/block_based_table_reader.h
+index 31c7b946b..a74f608ce 100644
+--- a/table/block_based/block_based_table_reader.h
++++ b/table/block_based/block_based_table_reader.h
+@@ -13,6 +13,7 @@
+ 
+ #include "db/range_tombstone_fragmenter.h"
+ #include "file/filename.h"
++#include "rocksdb/slice_transform.h"
+ #include "table/block_based/block.h"
+ #include "table/block_based/block_based_table_factory.h"
+ #include "table/block_based/block_type.h"
+@@ -86,24 +87,22 @@ class BlockBasedTable : public TableReader {
+   //    are set.
+   // @param force_direct_prefetch if true, always prefetching to RocksDB
+   //    buffer, rather than calling RandomAccessFile::Prefetch().
+-  static Status Open(const ReadOptions& ro, const ImmutableOptions& ioptions,
+-                     const EnvOptions& env_options,
+-                     const BlockBasedTableOptions& table_options,
+-                     const InternalKeyComparator& internal_key_comparator,
+-                     std::unique_ptr<RandomAccessFileReader>&& file,
+-                     uint64_t file_size,
+-                     std::unique_ptr<TableReader>* table_reader,
+-                     const SliceTransform* prefix_extractor = nullptr,
+-                     bool prefetch_index_and_filter_in_cache = true,
+-                     bool skip_filters = false, int level = -1,
+-                     const bool immortal_table = false,
+-                     const SequenceNumber largest_seqno = 0,
+-                     bool force_direct_prefetch = false,
+-                     TailPrefetchStats* tail_prefetch_stats = nullptr,
+-                     BlockCacheTracer* const block_cache_tracer = nullptr,
+-                     size_t max_file_size_for_l0_meta_pin = 0,
+-                     const std::string& cur_db_session_id = "",
+-                     uint64_t cur_file_num = 0);
++  static Status Open(
++      const ReadOptions& ro, const ImmutableOptions& ioptions,
++      const EnvOptions& env_options,
++      const BlockBasedTableOptions& table_options,
++      const InternalKeyComparator& internal_key_comparator,
++      std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
++      std::unique_ptr<TableReader>* table_reader,
++      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
++      bool prefetch_index_and_filter_in_cache = true, bool skip_filters = false, 
++      int level = -1, const bool immortal_table = false,
++      const SequenceNumber largest_seqno = 0,
++      bool force_direct_prefetch = false,
++      TailPrefetchStats* tail_prefetch_stats = nullptr,
++      BlockCacheTracer* const block_cache_tracer = nullptr,
++      size_t max_file_size_for_l0_meta_pin = 0,
++      const std::string& cur_db_session_id = "", uint64_t cur_file_num = 0);
+ 
+   bool PrefixMayMatch(const Slice& internal_key,
+                       const ReadOptions& read_options,
+@@ -511,6 +510,11 @@ class BlockBasedTable : public TableReader {
+   void DumpKeyValue(const Slice& key, const Slice& value,
+                     std::ostream& out_stream);
+ 
++  // Returns true if prefix_extractor is compatible with that used in building
++  // the table file.
++  bool PrefixExtractorChanged(const SliceTransform* prefix_extractor) const;
++  
++  
+   // A cumulative data block file read in MultiGet lower than this size will
+   // use a stack buffer
+   static constexpr size_t kMultiGetReadStackBufSize = 8192;
+@@ -595,12 +599,7 @@ struct BlockBasedTable::Rep {
+   bool hash_index_allow_collision;
+   bool whole_key_filtering;
+   bool prefix_filtering;
+-  // TODO(kailiu) It is very ugly to use internal key in table, since table
+-  // module should not be relying on db module. However to make things easier
+-  // and compatible with existing code, we introduce a wrapper that allows
+-  // block to extract prefix without knowing if a key is internal or not.
+-  // null if no prefix_extractor is passed in when opening the table reader.
+-  std::unique_ptr<SliceTransform> internal_prefix_transform;
++
+   std::shared_ptr<const SliceTransform> table_prefix_extractor;
+ 
+   std::shared_ptr<const FragmentedRangeTombstoneList> fragmented_range_dels;
+diff --git a/table/block_based/block_prefix_index.cc b/table/block_based/block_prefix_index.cc
+index f9d92c74c..c83701d69 100644
+--- a/table/block_based/block_prefix_index.cc
++++ b/table/block_based/block_prefix_index.cc
+@@ -69,9 +69,6 @@ struct PrefixRecord {
+ 
+ class BlockPrefixIndex::Builder {
+  public:
+-  explicit Builder(const SliceTransform* internal_prefix_extractor)
+-      : internal_prefix_extractor_(internal_prefix_extractor) {}
+-
+   void Add(const Slice& key_prefix, uint32_t start_block, uint32_t num_blocks) {
+     PrefixRecord* record = reinterpret_cast<PrefixRecord*>(
+         arena_.AllocateAligned(sizeof(PrefixRecord)));
+@@ -82,7 +79,7 @@ class BlockPrefixIndex::Builder {
+     prefixes_.push_back(record);
+   }
+ 
+-  BlockPrefixIndex* Finish() {
++  BlockPrefixIndex* Finish(const SliceTransform* prefix_extractor) {
+     // For now, use roughly 1:1 prefix to bucket ratio.
+     uint32_t num_buckets = static_cast<uint32_t>(prefixes_.size()) + 1;
+ 
+@@ -154,25 +151,22 @@ class BlockPrefixIndex::Builder {
+ 
+     assert(offset == total_block_array_entries);
+ 
+-    return new BlockPrefixIndex(internal_prefix_extractor_, num_buckets,
+-                                buckets, total_block_array_entries,
+-                                block_array_buffer);
++    return new BlockPrefixIndex(prefix_extractor, num_buckets, buckets,
++                                total_block_array_entries, block_array_buffer);
+   }
+ 
+  private:
+-  const SliceTransform* internal_prefix_extractor_;
+-
+   std::vector<PrefixRecord*> prefixes_;
+   Arena arena_;
+ };
+ 
+-Status BlockPrefixIndex::Create(const SliceTransform* internal_prefix_extractor,
++Status BlockPrefixIndex::Create(const SliceTransform* prefix_extractor,
+                                 const Slice& prefixes, const Slice& prefix_meta,
+                                 BlockPrefixIndex** prefix_index) {
+   uint64_t pos = 0;
+   auto meta_pos = prefix_meta;
+   Status s;
+-  Builder builder(internal_prefix_extractor);
++  Builder builder;
+ 
+   while (!meta_pos.empty()) {
+     uint32_t prefix_size = 0;
+@@ -201,14 +195,14 @@ Status BlockPrefixIndex::Create(const SliceTransform* internal_prefix_extractor,
+   }
+ 
+   if (s.ok()) {
+-    *prefix_index = builder.Finish();
++    *prefix_index = builder.Finish(prefix_extractor);
+   }
+ 
+   return s;
+ }
+ 
+ uint32_t BlockPrefixIndex::GetBlocks(const Slice& key, uint32_t** blocks) {
+-  Slice prefix = internal_prefix_extractor_->Transform(key);
++  Slice prefix = internal_prefix_extractor_.Transform(key);
+ 
+   uint32_t bucket = PrefixToBucket(prefix, num_buckets_);
+   uint32_t block_id = buckets_[bucket];
+diff --git a/table/block_based/block_prefix_index.h b/table/block_based/block_prefix_index.h
+index 04121320e..f8edec404 100644
+--- a/table/block_based/block_prefix_index.h
++++ b/table/block_based/block_prefix_index.h
+@@ -4,6 +4,7 @@
+ //  (found in the LICENSE.Apache file in the root directory).
+ #pragma once
+ 
++#include "db/dbformat.h"
+ #include <stdint.h>
+ #include "rocksdb/status.h"
+ 
+@@ -31,6 +32,8 @@ class BlockPrefixIndex {
+   }
+ 
+   // Create hash index by reading from the metadata blocks.
++  // Note: table reader (caller) is responsible for keeping shared_ptr to
++  // underlying prefix extractor
+   // @params prefixes: a sequence of prefixes.
+   // @params prefix_meta: contains the "metadata" to of the prefixes.
+   static Status Create(const SliceTransform* hash_key_extractor,
+@@ -46,17 +49,16 @@ class BlockPrefixIndex {
+   class Builder;
+   friend Builder;
+ 
+-  BlockPrefixIndex(const SliceTransform* internal_prefix_extractor,
+-                   uint32_t num_buckets, uint32_t* buckets,
+-                   uint32_t num_block_array_buffer_entries,
++  BlockPrefixIndex(const SliceTransform* prefix_extractor, uint32_t num_buckets,
++                   uint32_t* buckets, uint32_t num_block_array_buffer_entries,
+                    uint32_t* block_array_buffer)
+-      : internal_prefix_extractor_(internal_prefix_extractor),
++      : internal_prefix_extractor_(prefix_extractor),
+         num_buckets_(num_buckets),
+         num_block_array_buffer_entries_(num_block_array_buffer_entries),
+         buckets_(buckets),
+         block_array_buffer_(block_array_buffer) {}
+ 
+-  const SliceTransform* internal_prefix_extractor_;
++  InternalKeySliceTransform internal_prefix_extractor_;
+   uint32_t num_buckets_;
+   uint32_t num_block_array_buffer_entries_;
+   uint32_t* buckets_;
+diff --git a/table/block_based/data_block_hash_index_test.cc b/table/block_based/data_block_hash_index_test.cc
+index 121f78cef..a9b100a92 100644
+--- a/table/block_based/data_block_hash_index_test.cc
++++ b/table/block_based/data_block_hash_index_test.cc
+@@ -580,9 +580,9 @@ void TestBoundary(InternalKey& ik1, std::string& v1, InternalKey& ik2,
+   const bool kSkipFilters = true;
+   const bool kImmortal = true;
+   ASSERT_OK(ioptions.table_factory->NewTableReader(
+-      TableReaderOptions(ioptions, moptions.prefix_extractor.get(), soptions,
++      TableReaderOptions(ioptions, moptions.prefix_extractor, soptions,
+                          internal_comparator, !kSkipFilters, !kImmortal,
+-                         level_),
++                         /* force_direct_prefetch = */ false, level_),
+       std::move(file_reader), sink->contents().size(), &table_reader));
+   // Search using Get()
+   ReadOptions ro;
+diff --git a/table/block_based/hash_index_reader.cc b/table/block_based/hash_index_reader.cc
+index 4d8544161..15209c010 100644
+--- a/table/block_based/hash_index_reader.cc
++++ b/table/block_based/hash_index_reader.cc
+@@ -95,8 +95,8 @@ Status HashIndexReader::Create(const BlockBasedTable* table,
+   }
+ 
+   BlockPrefixIndex* prefix_index = nullptr;
+-  assert(rep->internal_prefix_transform.get() != nullptr);
+-  s = BlockPrefixIndex::Create(rep->internal_prefix_transform.get(),
++  assert(rep->table_prefix_extractor);
++  s = BlockPrefixIndex::Create(rep->table_prefix_extractor.get(),
+                                prefixes_contents.data,
+                                prefixes_meta_contents.data, &prefix_index);
+   // TODO: log error
+diff --git a/table/meta_blocks.cc b/table/meta_blocks.cc
+index ee92dcebb..076f7b77e 100644
+--- a/table/meta_blocks.cc
++++ b/table/meta_blocks.cc
+@@ -250,10 +250,12 @@ Status ReadProperties(const ReadOptions& read_options,
+   }
+ 
+   Block properties_block(std::move(block_contents));
+-  DataBlockIter iter;
+-  properties_block.NewDataIterator(BytewiseComparator(),
+-                                   kDisableGlobalSequenceNumber, &iter);
+-
++#ifdef __aarch64__
++  std::unique_ptr<MetaBlockIter> iter(properties_block.NewMetaIterator());
++#else
++  std::unique_ptr<DataBlockIter> iter(properties_block.NewDataIterator(
++      BytewiseComparator(), kDisableGlobalSequenceNumber));
++#endif
+   auto new_table_properties = new TableProperties();
+   // All pre-defined properties of type uint64_t
+   std::unordered_map<std::string, uint64_t*> predefined_uint64_properties = {
+@@ -303,13 +305,13 @@ Status ReadProperties(const ReadOptions& read_options,
+   };
+ 
+   std::string last_key;
+-  for (iter.SeekToFirstOrReport(); iter.Valid(); iter.NextOrReport()) {
+-    s = iter.status();
++  for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
++    s = iter->status();
+     if (!s.ok()) {
+       break;
+     }
+ 
+-    auto key = iter.key().ToString();
++    auto key = iter->key().ToString();
+     // properties block should be strictly sorted with no duplicate key.
+     if (!last_key.empty() &&
+         BytewiseComparator()->Compare(key, last_key) <= 0) {
+@@ -318,11 +320,11 @@ Status ReadProperties(const ReadOptions& read_options,
+     }
+     last_key = key;
+ 
+-    auto raw_val = iter.value();
++    auto raw_val = iter->value();
+     auto pos = predefined_uint64_properties.find(key);
+ 
+     new_table_properties->properties_offsets.insert(
+-        {key, handle.offset() + iter.ValueOffset()});
++        {key, handle.offset() + iter->ValueOffset()});
+ 
+     if (pos != predefined_uint64_properties.end()) {
+       if (key == TablePropertiesNames::kDeletedKeys ||
+@@ -496,8 +498,7 @@ Status FindMetaBlock(RandomAccessFileReader* file, uint64_t file_size,
+   Block metaindex_block(std::move(metaindex_contents));
+ 
+   std::unique_ptr<InternalIterator> meta_iter;
+-  meta_iter.reset(metaindex_block.NewDataIterator(
+-      BytewiseComparator(), kDisableGlobalSequenceNumber));
++  meta_iter.reset(metaindex_block.NewMetaIterator());
+ 
+   return FindMetaBlock(meta_iter.get(), meta_block_name, block_handle);
+ }
+diff --git a/table/plain/plain_table_factory.cc b/table/plain/plain_table_factory.cc
+index 737b6b58f..517552fe1 100644
+--- a/table/plain/plain_table_factory.cc
++++ b/table/plain/plain_table_factory.cc
+@@ -67,7 +67,7 @@ Status PlainTableFactory::NewTableReader(
+       table, table_options_.bloom_bits_per_key, table_options_.hash_table_ratio,
+       table_options_.index_sparseness, table_options_.huge_page_tlb_size,
+       table_options_.full_scan_mode, table_reader_options.immortal,
+-      table_reader_options.prefix_extractor);
++      table_reader_options.prefix_extractor.get());
+ }
+ 
+ TableBuilder* PlainTableFactory::NewTableBuilder(
+diff --git a/table/sst_file_dumper.cc b/table/sst_file_dumper.cc
+index d2ade5bfe..3866a617e 100644
+--- a/table/sst_file_dumper.cc
++++ b/table/sst_file_dumper.cc
+@@ -149,7 +149,7 @@ Status SstFileDumper::NewTableReader(
+     const InternalKeyComparator& /*internal_comparator*/, uint64_t file_size,
+     std::unique_ptr<TableReader>* /*table_reader*/) {
+   auto t_opt =
+-      TableReaderOptions(ioptions_, moptions_.prefix_extractor.get(), soptions_,
++      TableReaderOptions(ioptions_, moptions_.prefix_extractor, soptions_,
+                          internal_comparator_, false /* skip_filters */,
+                          false /* imortal */, true /* force_direct_prefetch */);
+   // Allow open file with global sequence number for backward compatibility.
+diff --git a/table/sst_file_reader.cc b/table/sst_file_reader.cc
+index e106bca9d..48f1be0be 100644
+--- a/table/sst_file_reader.cc
++++ b/table/sst_file_reader.cc
+@@ -56,7 +56,7 @@ Status SstFileReader::Open(const std::string& file_path) {
+     file_reader.reset(new RandomAccessFileReader(std::move(file), file_path));
+   }
+   if (s.ok()) {
+-    TableReaderOptions t_opt(r->ioptions, r->moptions.prefix_extractor.get(),
++    TableReaderOptions t_opt(r->ioptions, r->moptions.prefix_extractor,
+                              r->soptions, r->ioptions.internal_comparator);
+     // Allow open file with global sequence number for backward compatibility.
+     t_opt.largest_seqno = kMaxSequenceNumber;
+diff --git a/table/table_builder.h b/table/table_builder.h
+index 92011910d..21c4ebec3 100644
+--- a/table/table_builder.h
++++ b/table/table_builder.h
+@@ -30,35 +30,34 @@ class Status;
+ 
+ struct TableReaderOptions {
+   // @param skip_filters Disables loading/accessing the filter block
+-  TableReaderOptions(const ImmutableOptions& _ioptions,
+-                     const SliceTransform* _prefix_extractor,
+-                     const EnvOptions& _env_options,
+-                     const InternalKeyComparator& _internal_comparator,
+-                     bool _skip_filters = false, bool _immortal = false,
+-                     bool _force_direct_prefetch = false, int _level = -1,
+-                     BlockCacheTracer* const _block_cache_tracer = nullptr,
+-                     size_t _max_file_size_for_l0_meta_pin = 0,
+-                     const std::string& _cur_db_session_id = "",
+-                     uint64_t _cur_file_num = 0)
+-      : TableReaderOptions(
+-            _ioptions, _prefix_extractor, _env_options, _internal_comparator,
+-            _skip_filters, _immortal, _force_direct_prefetch, _level,
+-            0 /* _largest_seqno */, _block_cache_tracer,
+-            _max_file_size_for_l0_meta_pin, _cur_db_session_id, _cur_file_num) {
++  TableReaderOptions(
++    const ImmutableOptions& _ioptions,
++    const std::shared_ptr<const SliceTransform>& _prefix_extractor,
++    const EnvOptions& _env_options,
++    const InternalKeyComparator& _internal_comparator,
++    bool _skip_filters = false, bool _immortal = false,
++    bool _force_direct_prefetch = false, int _level = -1,
++    BlockCacheTracer* const _block_cache_tracer = nullptr,
++    size_t _max_file_size_for_l0_meta_pin = 0,
++    const std::string& _cur_db_session_id = "", uint64_t _cur_file_num = 0)
++    : TableReaderOptions(
++          _ioptions, _prefix_extractor, _env_options, _internal_comparator,
++          _skip_filters, _immortal, _force_direct_prefetch, _level,
++          0 /* _largest_seqno */, _block_cache_tracer,
++          _max_file_size_for_l0_meta_pin, _cur_db_session_id, _cur_file_num) {
+   }
+ 
+   // @param skip_filters Disables loading/accessing the filter block
+-  TableReaderOptions(const ImmutableOptions& _ioptions,
+-                     const SliceTransform* _prefix_extractor,
+-                     const EnvOptions& _env_options,
+-                     const InternalKeyComparator& _internal_comparator,
+-                     bool _skip_filters, bool _immortal,
+-                     bool _force_direct_prefetch, int _level,
+-                     SequenceNumber _largest_seqno,
+-                     BlockCacheTracer* const _block_cache_tracer,
+-                     size_t _max_file_size_for_l0_meta_pin,
+-                     const std::string& _cur_db_session_id,
+-                     uint64_t _cur_file_num)
++  TableReaderOptions(
++      const ImmutableOptions& _ioptions,
++      const std::shared_ptr<const SliceTransform>& _prefix_extractor,
++      const EnvOptions& _env_options,
++      const InternalKeyComparator& _internal_comparator, bool _skip_filters,
++      bool _immortal, bool _force_direct_prefetch, int _level,
++      SequenceNumber _largest_seqno,
++      BlockCacheTracer* const _block_cache_tracer,
++      size_t _max_file_size_for_l0_meta_pin,
++      const std::string& _cur_db_session_id, uint64_t _cur_file_num)
+       : ioptions(_ioptions),
+         prefix_extractor(_prefix_extractor),
+         env_options(_env_options),
+@@ -74,7 +73,7 @@ struct TableReaderOptions {
+         cur_file_num(_cur_file_num) {}
+ 
+   const ImmutableOptions& ioptions;
+-  const SliceTransform* prefix_extractor;
++  std::shared_ptr<const SliceTransform> prefix_extractor;
+   const EnvOptions& env_options;
+   const InternalKeyComparator& internal_comparator;
+   // This is only used for BlockBasedTable (reader)
+diff --git a/table/table_reader_bench.cc b/table/table_reader_bench.cc
+index df4a750d7..c6391a396 100644
+--- a/table/table_reader_bench.cc
++++ b/table/table_reader_bench.cc
+@@ -143,8 +143,8 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
+     std::unique_ptr<RandomAccessFileReader> file_reader(
+         new RandomAccessFileReader(std::move(raf), file_name));
+     s = opts.table_factory->NewTableReader(
+-        TableReaderOptions(ioptions, moptions.prefix_extractor.get(),
+-                           env_options, ikc),
++        TableReaderOptions(ioptions, moptions.prefix_extractor, env_options, 
++                           ikc),
+         std::move(file_reader), file_size, &table_reader);
+     if (!s.ok()) {
+       fprintf(stderr, "Open Table Error: %s\n", s.ToString().c_str());
+diff --git a/table/table_test.cc b/table/table_test.cc
+index 9827c95d5..2d931f8d3 100644
+--- a/table/table_test.cc
++++ b/table/table_test.cc
+@@ -404,7 +404,7 @@ class TableConstructor : public Constructor {
+     const bool kSkipFilters = true;
+     const bool kImmortal = true;
+     return ioptions.table_factory->NewTableReader(
+-        TableReaderOptions(ioptions, moptions.prefix_extractor.get(), soptions,
++        TableReaderOptions(ioptions, moptions.prefix_extractor, soptions,
+                            internal_comparator, !kSkipFilters, !kImmortal,
+                            false, level_, largest_seqno_, &block_cache_tracer_,
+                            moptions.write_buffer_size, "", uniq_id_),
+@@ -442,7 +442,7 @@ class TableConstructor : public Constructor {
+ 
+     file_reader_.reset(new RandomAccessFileReader(std::move(source), "test"));
+     return ioptions.table_factory->NewTableReader(
+-        TableReaderOptions(ioptions, moptions.prefix_extractor.get(), soptions,
++        TableReaderOptions(ioptions, moptions.prefix_extractor, soptions,
+                            *last_internal_key_),
+         std::move(file_reader_), TEST_GetSink()->contents().size(),
+         &table_reader_);
+@@ -4386,7 +4386,7 @@ TEST_P(BlockBasedTableTest, DISABLED_TableWithGlobalSeqno) {
+         new RandomAccessFileReader(std::move(source), ""));
+ 
+     options.table_factory->NewTableReader(
+-        TableReaderOptions(ioptions, moptions.prefix_extractor.get(),
++        TableReaderOptions(ioptions, moptions.prefix_extractor,
+                            EnvOptions(), ikc),
+         std::move(file_reader), ss_rw.contents().size(), &table_reader);
+ 
+@@ -4555,8 +4555,7 @@ TEST_P(BlockBasedTableTest, BlockAlignTest) {
+   const MutableCFOptions moptions2(options2);
+ 
+   ASSERT_OK(ioptions.table_factory->NewTableReader(
+-      TableReaderOptions(ioptions2, moptions2.prefix_extractor.get(),
+-                         EnvOptions(),
++      TableReaderOptions(ioptions2, moptions2.prefix_extractor, EnvOptions(),
+                          GetPlainInternalComparator(options2.comparator)),
+       std::move(file_reader), sink->contents().size(), &table_reader));
+ 
+@@ -4737,8 +4736,7 @@ TEST_P(BlockBasedTableTest, PropertiesMetaBlockLast) {
+ 
+   // verify properties block comes last
+   std::unique_ptr<InternalIterator> metaindex_iter{
+-      metaindex_block.NewDataIterator(options.comparator,
+-                                      kDisableGlobalSequenceNumber)};
++      metaindex_block.NewMetaIterator()};
+   uint64_t max_offset = 0;
+   std::string key_at_max_offset;
+   for (metaindex_iter->SeekToFirst(); metaindex_iter->Valid();
+@@ -4758,6 +4756,90 @@ TEST_P(BlockBasedTableTest, PropertiesMetaBlockLast) {
+   c.ResetTableReader();
+ }
+ 
++TEST_P(BlockBasedTableTest, SeekMetaBlocks) {
++  TableConstructor c(BytewiseComparator(), true /* convert_to_internal_key_ */);
++  c.Add("foo_a1", "val1");
++  c.Add("foo_b2", "val2");
++  c.Add("foo_c3", "val3");
++  c.Add("foo_d4", "val4");
++  c.Add("foo_e5", "val5");
++  c.Add("foo_f6", "val6");
++  c.Add("foo_g7", "val7");
++  c.Add("foo_h8", "val8");
++  c.Add("foo_j9", "val9");
++
++  // write an SST file
++  Options options;
++  BlockBasedTableOptions table_options = GetBlockBasedTableOptions();
++  table_options.index_type = BlockBasedTableOptions::kHashSearch;
++  table_options.filter_policy.reset(NewBloomFilterPolicy(
++      8 /* bits_per_key */, false /* use_block_based_filter */));
++  options.prefix_extractor.reset(NewFixedPrefixTransform(4));
++  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
++  ImmutableOptions ioptions(options);
++  MutableCFOptions moptions(options);
++  std::vector<std::string> keys;
++  stl_wrappers::KVMap kvmap;
++  c.Finish(options, ioptions, moptions, table_options,
++           GetPlainInternalComparator(options.comparator), &keys, &kvmap);
++  
++  // get file reader
++  test::StringSink* table_sink = c.TEST_GetSink();
++  std::unique_ptr<FSRandomAccessFile> source(new test::StringSource(
++      table_sink->contents(), 0 /* unique_id */, false /* allow_mmap_reads */));
++  
++  std::unique_ptr<RandomAccessFileReader> table_reader(
++      new RandomAccessFileReader(std::move(source), "test"));
++  size_t table_size = table_sink->contents().size();
++
++  // read footer
++  Footer footer;
++  IOOptions opts;
++  ASSERT_OK(ReadFooterFromFile(opts, table_reader.get(),
++                               nullptr /* prefetch_buffer */, table_size,
++                               &footer, kBlockBasedTableMagicNumber));
++
++  // read metaindex
++  auto metaindex_handle = footer.metaindex_handle();
++  BlockContents metaindex_contents;
++  PersistentCacheOptions pcache_opts;
++  BlockFetcher block_fetcher(
++      table_reader.get(), nullptr /* prefetch_buffer */, footer, ReadOptions(),
++      metaindex_handle, &metaindex_contents, ioptions, false /* decompress */,
++      false /*maybe_compressed*/, BlockType::kMetaIndex,
++      UncompressionDict::GetEmptyDict(), pcache_opts,
++      nullptr /*memory_allocator*/);
++  ASSERT_OK(block_fetcher.ReadBlockContents());
++  Block metaindex_block(std::move(metaindex_contents));
++
++  // verify properties block comes last
++  std::unique_ptr<MetaBlockIter> metaindex_iter(
++      metaindex_block.NewMetaIterator());
++  bool has_hash_prefixes = false;
++  bool has_hash_metadata = false;
++  for (metaindex_iter->SeekToFirst(); metaindex_iter->Valid();
++       metaindex_iter->Next()) {
++    if (metaindex_iter->key().ToString() == kHashIndexPrefixesBlock) {
++      has_hash_prefixes = true;
++    } else if (metaindex_iter->key().ToString() == 
++               kHashIndexPrefixesMetadataBlock) {
++      has_hash_metadata = true;
++    }
++  }
++  if (has_hash_metadata) {
++    metaindex_iter->Seek(kHashIndexPrefixesMetadataBlock);
++    ASSERT_TRUE(metaindex_iter->Valid());
++    ASSERT_EQ(kHashIndexPrefixesMetadataBlock,
++              metaindex_iter->key().ToString());
++  }
++  if (has_hash_prefixes) {
++    metaindex_iter->Seek(kHashIndexPrefixesBlock);
++    ASSERT_TRUE(metaindex_iter->Valid());
++    ASSERT_EQ(kHashIndexPrefixesBlock, metaindex_iter->key().ToString());
++  }
++  c.ResetTableReader();
++}
++
+ TEST_P(BlockBasedTableTest, BadOptions) {
+   ROCKSDB_NAMESPACE::Options options;
+   options.compression = kNoCompression;
+diff --git a/util/coding.cc b/util/coding.cc
+index a54324d28..250bf5294 100644
+--- a/util/coding.cc
++++ b/util/coding.cc
+@@ -69,6 +69,46 @@ const char* GetVarint32PtrFallback(const char* p, const char* limit,
+   return nullptr;
+ }
+ 
++#ifdef __ARM_FEATURE_SVE2_BITPERM
++static inline uint64_t sve2_scalar_to_num(uint64_t varint_part)
++{
++  const uint64_t extract_mask = 0x0000000F7F7F7F7FULL;
++  
++  svuint64_t sv_data   = svdup_u64(varint_part);
++  svuint64_t sv_mask   = svdup_u64(extract_mask);
++  svuint64_t sv_result = svbext_u64(sv_data, sv_mask);
++
++  return svlastb_u64(svptrue_b64(), sv_result);
++}
++
++const char *GetVarint32PtrFallback_sve2(const char *p, const char *limit, uint32_t *value)
++{
++  if (limit - p < 8) {
++    return GetVarint32PtrFallback(p, limit, value);
++  }
++
++  const uint64_t *ptr = (const uint64_t *)p;
++  const uint64_t mask_0x7f = 0x7F7F7F7F7F7F7F7FULL;
++  uint64_t msbs = ~ptr[0] & ~mask_0x7f;
++  if (msbs == 0) {
++    return GetVarint32PtrFallback(p, limit, value);
++  }
++
++  const size_t first_stop_bit = static_cast<size_t>(__builtin_ctzll(msbs));
++  const size_t len = (first_stop_bit >> 3) + 1;
++  if (len > 5) {
++    return GetVarint32PtrFallback(p, limit, value);
++  }
++
++  uint64_t mask = msbs ^ (msbs - 1);
++  uint64_t varint_part = ptr[0] & mask;
++
++  *value = (uint32_t)sve2_scalar_to_num(varint_part);
++  p += len;
++  return p;
++}
++#endif
++
+ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
+   uint64_t result = 0;
+   for (uint32_t shift = 0; shift <= 63 && p < limit; shift += 7) {
+diff --git a/util/coding.h b/util/coding.h
+index 876f181f1..fdfa85dd0 100644
+--- a/util/coding.h
++++ b/util/coding.h
+@@ -18,6 +18,14 @@
+ #pragma once
+ #include <algorithm>
+ #include <string>
++#if defined(__linux__) && defined(__aarch64__)
++#include <sys/auxv.h>
++#include <asm/hwcap.h>
++#endif
++
++#ifdef HAVE_SVE2
++#include <arm_sve.h>
++#endif
+ 
+ #include "port/port.h"
+ #include "rocksdb/slice.h"
+@@ -102,6 +110,11 @@ extern char* EncodeVarint32(char* dst, uint32_t value);
+ extern char* EncodeVarint64(char* dst, uint64_t value);
+ 
+ // Internal routine for use by fallback path of GetVarint32Ptr
++#ifdef __ARM_FEATURE_SVE2_BITPERM
++extern const char* GetVarint32PtrFallback_sve2(const char* p,
++                                          const char* limit,
++                                          uint32_t* value);
++#endif
+ extern const char* GetVarint32PtrFallback(const char* p,
+                                           const char* limit,
+                                           uint32_t* value);
+@@ -115,6 +128,12 @@ inline const char* GetVarint32Ptr(const char* p,
+       return p + 1;
+     }
+   }
++#ifdef __ARM_FEATURE_SVE2_BITPERM
++  unsigned long auxval2 = getauxval(AT_HWCAP2);
++  if (auxval2 & HWCAP2_SVE2) {
++    return GetVarint32PtrFallback_sve2(p, limit, value);
++  }
++#endif
+   return GetVarint32PtrFallback(p, limit, value);
+ }
+ 
+-- 
+2.55.0.windows.2
+
