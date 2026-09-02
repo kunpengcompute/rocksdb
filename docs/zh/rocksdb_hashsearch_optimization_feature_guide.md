@@ -130,7 +130,11 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
 ASLR（Address Space Layout Randomization，地址空间布局随机化）是一种针对缓冲区溢出的安全保护技术，通过对堆、栈、共享库映射等线性区布局的随机化，增加攻击者预测目的地址的难度，防止攻击者直接定位攻击代码位置，达到阻止溢出攻击的目的。
 
-![安全检查与加固图](public_sys-resources/安全检查与加固图.png)
+```bash
+echo 2 > /proc/sys/kernel/randomize_va_space
+cat /proc/sys/kernel/randomize_va_space
+```
+![](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 
