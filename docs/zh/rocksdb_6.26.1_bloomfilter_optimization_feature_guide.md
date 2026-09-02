@@ -133,6 +133,7 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
+
 ![](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录

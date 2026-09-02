@@ -137,6 +137,7 @@ ASLR（Address Space Layout Randomization，地址空间布局随机化）是一
 echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
+
 ![](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
