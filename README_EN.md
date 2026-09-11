@@ -1,5 +1,7 @@
 # README<a name="EN-US_TOPIC_0000002521561018"></a>
 
+English | [简体中文](./README.md)
+
 ## Project Introduction<a name="EN-US_TOPIC_0000002551532807"></a>
 
 Metadata acceleration is a storage engine performance acceleration feature developed by Huawei and optimized based on RocksDB.

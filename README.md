@@ -1,5 +1,7 @@
 # README<a name="ZH-CN_TOPIC_0000002521561018"></a>
 
+简体中文 | [English](./README_EN.md)
+
 ## 项目介绍<a name="ZH-CN_TOPIC_0000002551532807"></a>
 
 元数据加速特性是华为自主研发，在RocksDB基础上优化后的存储引擎性能加速特性。
