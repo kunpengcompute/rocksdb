@@ -28,19 +28,21 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 
 **表1** 硬件要求
 
-| 项目   | 说明          |
-| ------ | ------------- |
-| CPU    | 鲲鹏950处理器 |
+| 项目  | 说明                   |
+| --- | -------------------- |
+| CPU | 鲲鹏920新型号处理器和鲲鹏950处理器 |
 
 **表2** 操作系统和软件要求<a id="操作系统和软件要求"></a>
 
-| 项目                                            | 版本                         | 下载链接                                                                                                                          |
-| ----------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 操作系统                                        | openEuler 24.03 LTS SP3      | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| RocksDB                                     | 6.26.1                       | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1)                                                                      |
-| GCC | 12.3.1                   | openEuler 24.03 LTS SP3版本自带                                                                                                  |
-| Java  |     11             | 在openEuler 24.03 LTS SP3系统网络畅通的情况下，使用Yum工具直接安装                                                               |
-| patch文件                                        | 0003_bloomfilter_opt.patch   | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0003_bloomfilter_opt.patch)            |
+| 项目 | 版本 | 获取地址 |
+| --- | --- | --- |
+| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
+| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| Java | 11 | 通过yum源安装 |
+| 布隆过滤器SVE2向量化优化patch | 0003_bloomfilter_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0003_bloomfilter_opt.patch) |
 
 ## 安装环境
 
@@ -55,37 +57,48 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
    git checkout v6.26.1
    ```
 
-2. 使用Yum安装依赖并配置环境变量。
+2. 下载并安装GCC 12.3.1编译器。
 
    ```bash
-   yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
-   
+   cd ~
+   wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+   tar -zxvf gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+
+   export PATH=~/gcc-12.3.1-2025.06-aarch64-linux/bin:$PATH
+   export LD_LIBRARY_PATH=~/gcc-12.3.1-2025.06-aarch64-linux/lib64:$LD_LIBRARY_PATH
+   export INCLUDE=~/gcc-12.3.1-2025.06-aarch64-linux/include:$INCLUDE
+   ```
+
+3. 使用Yum安装依赖并配置环境变量。
+
+   ```bash
+   yum install -y git make snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
+
    export JAVA_HOME=/usr/lib/jvm/java-11
    export PATH=$JAVA_HOME/bin:$PATH
    ```
 
-3. 获取优化特性的补丁文件，将其上传到主目录“\~”下。
+4. 获取优化特性的补丁文件，将其上传到主目录"\~"下。
 
    获取路径请参见[**表2** 操作系统和软件要求](#操作系统和软件要求)。
 
-4. 执行以下命令，合入优化特性。如果没有输出则说明合入成功。
+5. 执行以下命令，合入优化特性。如果没有输出则说明合入成功。
 
    ```bash
    cd ~/rocksdb
    patch -p1 < ~/0003_bloomfilter_opt.patch
    ```
 
-5. 编译RocksDB的jar包和相关动态库，以使用优化特性。
-
+6. 编译RocksDB的jar包和相关动态库，以使用优化特性。
    1. 编译RocksDB的jar包和相关动态库。
 
       ```bash
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-      ```   
+      ```
 
    2. （可选）若是编译过程中报缺少jar包的错误，可以先清理文件，再手动下载缺少的jar包，然后重新进行编译。
-    
+
       ```bash
       cd ~/rocksdb
       make clean
@@ -97,9 +110,9 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       wget https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/2.2/hamcrest-core-2.2.jar --no-check-certificate
       wget https://repo1.maven.org/maven2/junit/junit/4.13.1/junit-4.13.1.jar --no-check-certificate
       ```
-   
+
    3. 替换本地Maven仓库中的jar包。
-       
+
       ```bash
       cd ~/rocksdb
       cp java/target/rocksdbjni-6.26.1-linux64.jar \
@@ -107,9 +120,9 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
          ~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1
       ```
-       
+
    4. 提取原生动态库并设置`LD_LIBRARY_PATH`。
-       
+
       ```bash
       # 创建库存放目录（供 YCSB 使用）
       mkdir -p ~/Test/rocksdb-lib
@@ -123,7 +136,13 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       export LD_LIBRARY_PATH=~/Test/rocksdb-lib:$LD_LIBRARY_PATH
       ```
 
-6. （可选）通过YCSB工具测试可以得到使能本特性前后的性能提升效果。
+7. 执行YCSB测试，验证布隆过滤器SVE2向量化优化特性是否生效。
+
+   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
+
+   **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
+
+   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
@@ -134,10 +153,10 @@ echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![](figures/zh-cn_image_0000002504021297.png)
+![ASLR安全检查示意图](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 
-|文档版本| 发布日期   | 修改说明         |
-|----------| ---------- | ---------------- |
-|01| 2026-09-30 | 第一次正式发布。 |
+| 文档版本 | 发布日期       | 修改说明     |
+| ---- | ---------- | -------- |
+| 01   | 2026-09-30 | 第一次正式发布。 |
