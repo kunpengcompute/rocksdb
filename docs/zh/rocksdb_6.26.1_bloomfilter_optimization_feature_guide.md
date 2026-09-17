@@ -72,7 +72,7 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 
    ```bash
    cd ~/rocksdb
-   patch -p1 < ~/0003_bloomfilter_opt.patch
+   git apply --whitespace=nowarn ~/0003_bloomfilter_opt.patch
    ```
 
 5. 编译RocksDB的jar包和相关动态库，以使用优化特性。
@@ -82,10 +82,10 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       ```bash
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-      ```   
+      ```
 
    2. （可选）若是编译过程中报缺少jar包的错误，可以先清理文件，再手动下载缺少的jar包，然后重新进行编译。
-    
+   
       ```bash
       cd ~/rocksdb
       make clean
@@ -99,7 +99,7 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       ```
    
    3. 替换本地Maven仓库中的jar包。
-       
+      
       ```bash
       cd ~/rocksdb
       cp java/target/rocksdbjni-6.26.1-linux64.jar \
@@ -107,9 +107,9 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
       cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
          ~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1
       ```
-       
+      
    4. 提取原生动态库并设置`LD_LIBRARY_PATH`。
-       
+      
       ```bash
       # 创建库存放目录（供 YCSB 使用）
       mkdir -p ~/Test/rocksdb-lib
