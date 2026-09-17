@@ -1,5 +1,97 @@
 # Release Notes
 
+<!-- md-trans-meta sourceCommit=cef139c82914af4e0f704edede350a618687b4e3 translatedAt=2026-09-15T06:52:42.345Z pushedAt=2026-09-15T08:18:42.291Z -->
+
+## 2026-09-30
+
+### Change History
+
+| Version | Date | Description |
+| ---- | ---------- | -------- |
+| 01   | 2026-09-30 | Released RocksDB v6.26.1 optimization features: MemTable skip list and SST block prefetch optimization; CRC32C scalar-vector hybrid optimization; Bloom filter SVE2 vectorization-based optimization; dynamic SST level capacity optimization; index block HashSearch optimization; GCC compilation optimization; and KQMalloc memory allocation optimization. |
+
+### Version Mapping
+
+#### Product Version Information
+
+| Product Name | Product Version |
+| -------- | -------- |
+| BoostDB | 26.2.RC1 |
+
+#### Software Version Mapping
+
+| Feature | Software Type | Version |
+|--|--|--|
+| New RocksDB optimization features | OS | openEuler 24.03 LTS SP3 |
+| New RocksDB optimization features | GCC | 12.3.1 |
+| New RocksDB optimization features | JDK | 1.8.0+ |
+| New RocksDB optimization features | RocksDB | 6.26.1 |
+
+#### Hardware Version Mapping
+
+| Feature | Hardware Item | Requirement |
+| ------------- | ------------- | ----------------------------------------- |
+| New RocksDB optimization features | Processor | Kunpeng 950 |
+
+#### Virus Scan Results
+
+Virus scanning is not involved because no software package is released.
+
+### Important Notes
+
+None
+
+### Release Notes
+
+#### Change Description
+
+##### MemTable Skip List and SST Block Prefetch Optimization
+
+This feature introduces level-aware, same-level-successor-aware, and binary-search-branch-aware cache prefetch to the MemTable skip list and SST block lookup paths, reducing cache misses caused by pointer chasing and restart-offset reads.
+
+##### CRC32C Scalar-Vector Hybrid Optimization
+
+This feature leverages SVE2, pmull, and crc32cx instructions to build a hybrid pipeline combining 10-way scalar parallelism with 8-way vector folding, improving CRC32C checksum computation throughput in the read, write, and compression paths. It detects SVE2 support at runtime and falls back to the original implementation when SVE2 is unavailable, while preserving checksum results and interface semantics.
+
+##### Bloom Filter SVE2 Vectorization-based Optimization
+
+This feature batch-vectorizes multiple hash probe positions, parallel-reads the target words from a 512-bit filter cache line, and performs the probes via bitmasks, preserving no-false-negative decision semantics. It automatically falls back to a scalar path when SVE2 is unavailable, maintaining compatibility with the filter format, hash sequence, and return semantics.
+
+##### Dynamic SST Level Capacity Optimization
+
+This feature introduces an `autumn_c` level-scaling factor that dynamically computes the target capacity of each level based on the highest non-empty level currently in use, thereby tuning compaction frequency, write amplification, and read amplification.
+
+##### Index Block HashSearch Optimization
+
+This feature optimizes prefix configuration matching, HashSearch metadata loading, and AArch64 block parsing. When the prefix configuration matches, it narrows the range of candidate index/data blocks; when it does not match, it falls back to regular binary search, reducing unnecessary comparisons and drive I/O.
+
+##### GCC Compilation Optimization and KQMalloc Memory Allocation Optimization
+
+This feature uses the GCC PGO workflow—instrumented build, workload testing, and feedback-based build—to optimize code generation around the actual workload hotspots, and replaces the default memory allocator with KQMalloc to reduce allocation overhead in reads/writes, caching, MemTable access, flushing, and compaction.
+
+#### Resolved Issues
+
+None
+
+#### Known Issues
+
+None
+
+### Related Documentation
+
+| Document | Description | Delivery Method |
+|--|--|--|
+| [RocksDB 6.26.1 MemTable Skip List and SST Block Prefetch Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_prefetch_optimization_feature_guide.md) | Provides the principles, environment requirements, patch integration, compilation, and YCSB verification guidance for the prefetch optimization. | Open-source repository |
+| [RocksDB 6.26.1 CRC32C Scalar-Vector Hybrid Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_crc32c_optimization_feature_guide.md) | Provides the principles, fallback mechanism, and enablement guidance for CRC32C SVE2/pmull hybrid optimization. | Open-source repository |
+| [RocksDB 6.26.1 Bloom Filter SVE2 Vectorization-based Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_bloomfilter_optimization_feature_guide.md) | Provides the principles, compatibility, and testing guidance for Bloom filter vectorized probing optimization. | Open-source repository |
+| [RocksDB 6.26.1 autumn_c Dynamic Level Capacity Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_dynamic_capacity_optimization_feature_guide.md) | Provides the `autumn_c` dynamic level capacity calculation, configuration, and verification guidance. | Open-source repository |
+| [RocksDB 6.26.1 Index Block HashSearch Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_hashsearch_optimization_feature_guide.md) | Provides the prefix matching, metadata parsing, fallback logic, and performance verification guidance for index block HashSearch optimization. | Open-source repository |
+| [RocksDB 6.26.1 GCC Compilation Optimization and KQMalloc Memory Allocation Optimization Feature Guide](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en/rocksdb_6.26.1_gcc_kqmalloc_optimization_feature_guide.md) | Provides the GCC PGO, KQMalloc memory library switching, runtime configuration, and performance verification guidance. | Open-source repository |
+
+### Obtaining Documentation
+
+Visit the [open-source repository](https://gitcode.com/boostkit/rocksdb/tree/master/docs/en) to view or download required documents.
+
 ## 2026-06-30
 
 ### Change History
