@@ -86,7 +86,7 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 
    ```bash
    cd ~/rocksdb
-   patch -p1 < ~/0003_bloomfilter_opt.patch
+   git apply --whitespace=nowarn ~/0003_bloomfilter_opt.patch
    ```
 
 6. 编译RocksDB的jar包和相关动态库，以使用优化特性。

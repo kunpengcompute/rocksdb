@@ -1,6 +1,6 @@
-From e0b50ebe078d74b6970ce9cc6750efe7f7edea53 Mon Sep 17 00:00:00 2001
-From: WangKX <wangkaixin14@huawei.com>
-Date: Thu, 6 Aug 2026 10:45:24 +0800
+From 475be6a614f2de697b7c2dfaa9b68427f029b15a Mon Sep 17 00:00:00 2001
+From: WangKX <1036907114@qq.com>
+Date: Thu, 17 Sep 2026 16:25:54 +0800
 Subject: [PATCH] feat: implement hashsearch optimization for RocksDB
 
 ---
@@ -103,7 +103,7 @@ index 5af6515c8..097d1fd47 100644
                           !kImmortal, false /* force_direct_prefetch */,
                           -1 /* level */),
 diff --git a/db/db_test.cc b/db/db_test.cc
-index 55bc7e815..da41a267b 100644
+index 55bc7e815..1c48289cb 100644
 --- a/db/db_test.cc
 +++ b/db/db_test.cc
 @@ -3416,7 +3416,40 @@ TEST_F(DBTest, BlockBasedTablePrefixIndexTest) {
@@ -135,7 +135,7 @@ index 55bc7e815..da41a267b 100644
 +  Reopen(options);
 +  ASSERT_EQ("v1", Get("k1"));
 +  ASSERT_EQ("v2", Get("k2"));
-+  
++
 +#ifndef ROCKSDB_LITE
 +  // Change again
 +  ASSERT_OK(dbfull()->SetOptions({{"prefix_extractor", "fixed:2"}}));
@@ -382,7 +382,7 @@ index cef0f7369..0799f5d90 100644
            TableReaderCaller::kRepair, /*arena=*/nullptr, /*skip_filters=*/false,
            /*level=*/-1, /*max_file_size_for_l0_meta_pin=*/0,
 diff --git a/db/table_cache.cc b/db/table_cache.cc
-index fe549329a..e05bd4cbb 100644
+index fe549329a..9e6f02b0c 100644
 --- a/db/table_cache.cc
 +++ b/db/table_cache.cc
 @@ -101,8 +101,8 @@ Status TableCache::GetTableReader(
@@ -411,7 +411,7 @@ index fe549329a..e05bd4cbb 100644
      const ReadOptions& options, const FileOptions& file_options,
      const InternalKeyComparator& icomparator, const FileMetaData& file_meta,
 -    RangeDelAggregator* range_del_agg, const SliceTransform* prefix_extractor,
-+    RangeDelAggregator* range_del_agg, 
++    RangeDelAggregator* range_del_agg,
 +    const std::shared_ptr<const SliceTransform>& prefix_extractor,
      TableReader** table_reader_ptr, HistogramImpl* file_read_hist,
      TableReaderCaller caller, Arena* arena, bool skip_filters, int level,
@@ -526,7 +526,7 @@ index fe549329a..e05bd4cbb 100644
    TableReader* table_reader = fd.table_reader;
    Cache::Handle* table_handle = nullptr;
 diff --git a/db/table_cache.h b/db/table_cache.h
-index e8144dcd0..5fc912c7f 100644
+index e8144dcd0..4d4f1ba28 100644
 --- a/db/table_cache.h
 +++ b/db/table_cache.h
 @@ -73,9 +73,10 @@ class TableCache {
@@ -580,7 +580,7 @@ index e8144dcd0..5fc912c7f 100644
 +      const InternalKeyComparator& internal_comparator,
 +      const FileMetaData& file_meta, const MultiGetContext::Range* mget_range,
 +      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
-+      HistogramImpl* file_read_hist = nullptr, bool skip_filters = false, 
++      HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
 +      int level = -1);
  
    // Evict any entry for the specified file number
@@ -677,7 +677,7 @@ index e8144dcd0..5fc912c7f 100644
 +  Status GetTableReader(
 +      const ReadOptions& ro, const FileOptions& file_options,
 +      const InternalKeyComparator& internal_comparator,
-+      const FileDescriptor& fd, bool sequential_mode, bool record_read_stats, 
++      const FileDescriptor& fd, bool sequential_mode, bool record_read_stats,
 +      HistogramImpl* file_read_hist, std::unique_ptr<TableReader>* table_reader,
 +      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
 +      bool skip_filters = false, int level = -1,
@@ -896,7 +896,7 @@ index 5d9adf4b3..f516d361d 100644
              /*no per level latency histogram=*/nullptr,
              TableReaderCaller::kCompaction, /*skip_filters=*/false,
 diff --git a/table/block_based/block.cc b/table/block_based/block.cc
-index 9c2a60844..80f559c9c 100644
+index 9c2a60844..765af115e 100644
 --- a/table/block_based/block.cc
 +++ b/table/block_based/block.cc
 @@ -126,10 +126,24 @@ struct DecodeKeyV4 {
@@ -914,9 +914,9 @@ index 9c2a60844..80f559c9c 100644
 +    return DecodeKeyV4()(p, limit, shared, non_shared);
 +  }
 +};
-+void DataBlockIter::NextImpl() { 
++void DataBlockIter::NextImpl() {
 +  bool is_shared = false;
-+  ParseNextDataKey(&is_shared); 
++  ParseNextDataKey(&is_shared);
 +}
  
 -void DataBlockIter::NextOrReportImpl() {
@@ -1080,32 +1080,28 @@ index 9c2a60844..80f559c9c 100644
  }
  
  void IndexBlockIter::SeekToFirstImpl() {
-@@ -462,11 +539,24 @@ void DataBlockIter::SeekToLastImpl() {
+@@ -462,7 +539,20 @@ void DataBlockIter::SeekToLastImpl() {
      return;
    }
    SeekToRestartPoint(num_restarts_ - 1);
 -  while (ParseNextDataKey<DecodeEntry>() && NextEntryOffset() < restarts_) {
 +  bool is_shared = false;
 +  while (ParseNextDataKey(&is_shared) && NextEntryOffset() < restarts_) {
-     // Keep skipping
-   }
- }
- 
++    // Keep skipping
++  }
++}
++
 +void MetaBlockIter::SeekToLastImpl() {
 +  if (data_ == nullptr) {  // Not init yet
 +    return;
 +  }
 +  SeekToRestartPoint(num_restarts_ - 1);
 +  bool is_shared = false;
-+  while (ParseNextKey<CheckAndDecodeEntry>(&is_shared) && 
++  while (ParseNextKey<CheckAndDecodeEntry>(&is_shared) &&
 +         NextEntryOffset() < restarts_) {
-+    // Keep skipping
-+  }
-+} 
-+
- void IndexBlockIter::SeekToLastImpl() {
-   if (data_ == nullptr) {  // Not init yet
-     return;
+     // Keep skipping
+   }
+ }
 @@ -487,13 +577,15 @@ void BlockIter<TValue>::CorruptionError() {
    value_.clear();
  }
@@ -1273,7 +1269,7 @@ index 9c2a60844..80f559c9c 100644
                                        SequenceNumber global_seqno,
                                        DataBlockIter* iter, Statistics* stats,
 diff --git a/table/block_based/block.h b/table/block_based/block.h
-index 000f64842..284c32e7c 100644
+index 000f64842..596e1eb00 100644
 --- a/table/block_based/block.h
 +++ b/table/block_based/block.h
 @@ -34,6 +34,7 @@ template <class TValue>
@@ -1290,15 +1286,15 @@ index 000f64842..284c32e7c 100644
  
 +  // Returns an MetaBlockIter for iterating over blocks containing metadata
 +  // (like Properties blocks).  Unlike data blocks, the keys for these blocks
-+  // do not contain sequence numbers, do not use a user-defined comparator, and 
++  // do not contain sequence numbers, do not use a user-defined comparator, and
 +  // do not track read amplification/statistics.  Additionally, MetaBlocks will
 +  // not assert if the block is formatted improperly.
 +  //
 +  // If `block_contents_pinned` is true, the caller will guarantee that when
 +  // the cleanup functions are transferred from the iterator to other
-+  // classes, e.g. PinnableSlice, the pointer to the bytes will still be 
++  // classes, e.g. PinnableSlice, the pointer to the bytes will still be
 +  // valid. Either the iterator holds cache handle or ownership of some resource
-+  // and release them in a release function, or caller is sure that the data 
++  // and release them in a release function, or caller is sure that the data
 +  // will not go away (for example, it's from mmapped file which will not be
 +  // closed).
 +  MetaBlockIter* NewMetaIterator(bool block_contents_pinned = false);
@@ -1392,7 +1388,7 @@ index 000f64842..284c32e7c 100644
 +// Iterator over MetaBlocks.  MetaBlocks are similar to Data Blocks and
 +// are used to store Properties associated with table.
 +// Meta blocks always store user keys (no sequence number) and always
-+// use the BytewiseComparator.  Additionally, MetaBlock accesses are 
++// use the BytewiseComparator.  Additionally, MetaBlock accesses are
 +// not recorded in the Statistics or for Read-Amplification.
 +class MetaBlockIter final : public BlockIter<Slice> {
 +  public:
@@ -1440,7 +1436,7 @@ index 000f64842..284c32e7c 100644
  
  }  // namespace ROCKSDB_NAMESPACE
 diff --git a/table/block_based/block_based_table_reader.cc b/table/block_based/block_based_table_reader.cc
-index ad8ee53f9..ee381330d 100644
+index ad8ee53f9..a7a5c453a 100644
 --- a/table/block_based/block_based_table_reader.cc
 +++ b/table/block_based/block_based_table_reader.cc
 @@ -125,8 +125,9 @@ void ReleaseCachedEntry(void* arg, void* h) {
@@ -1587,7 +1583,7 @@ index ad8ee53f9..ee381330d 100644
 -  } else if (!read_options.total_order_seek && prefix_extractor &&
 -             rep_->table_properties->prefix_extractor_name ==
 -                 prefix_extractor->AsString() &&
-+  } else if (!read_options.total_order_seek && 
++  } else if (!read_options.total_order_seek &&
 +             !PrefixExtractorChanged(prefix_extractor) &&
               prefix_extractor->InDomain(user_key_without_ts) &&
               !filter->PrefixMayMatch(
@@ -1666,7 +1662,7 @@ index ad8ee53f9..ee381330d 100644
        }
      }
 diff --git a/table/block_based/block_based_table_reader.h b/table/block_based/block_based_table_reader.h
-index 31c7b946b..a74f608ce 100644
+index 31c7b946b..700c2e031 100644
 --- a/table/block_based/block_based_table_reader.h
 +++ b/table/block_based/block_based_table_reader.h
 @@ -13,6 +13,7 @@
@@ -1707,7 +1703,7 @@ index 31c7b946b..a74f608ce 100644
 +      std::unique_ptr<RandomAccessFileReader>&& file, uint64_t file_size,
 +      std::unique_ptr<TableReader>* table_reader,
 +      const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
-+      bool prefetch_index_and_filter_in_cache = true, bool skip_filters = false, 
++      bool prefetch_index_and_filter_in_cache = true, bool skip_filters = false,
 +      int level = -1, const bool immortal_table = false,
 +      const SequenceNumber largest_seqno = 0,
 +      bool force_direct_prefetch = false,
@@ -1725,8 +1721,8 @@ index 31c7b946b..a74f608ce 100644
 +  // Returns true if prefix_extractor is compatible with that used in building
 +  // the table file.
 +  bool PrefixExtractorChanged(const SliceTransform* prefix_extractor) const;
-+  
-+  
++
++
    // A cumulative data block file read in MultiGet lower than this size will
    // use a stack buffer
    static constexpr size_t kMultiGetReadStackBufSize = 8192;
@@ -2064,7 +2060,7 @@ index 92011910d..21c4ebec3 100644
    const InternalKeyComparator& internal_comparator;
    // This is only used for BlockBasedTable (reader)
 diff --git a/table/table_reader_bench.cc b/table/table_reader_bench.cc
-index df4a750d7..c6391a396 100644
+index df4a750d7..f4181018f 100644
 --- a/table/table_reader_bench.cc
 +++ b/table/table_reader_bench.cc
 @@ -143,8 +143,8 @@ void TableReaderBenchmark(Options& opts, EnvOptions& env_options,
@@ -2073,13 +2069,13 @@ index df4a750d7..c6391a396 100644
      s = opts.table_factory->NewTableReader(
 -        TableReaderOptions(ioptions, moptions.prefix_extractor.get(),
 -                           env_options, ikc),
-+        TableReaderOptions(ioptions, moptions.prefix_extractor, env_options, 
++        TableReaderOptions(ioptions, moptions.prefix_extractor, env_options,
 +                           ikc),
          std::move(file_reader), file_size, &table_reader);
      if (!s.ok()) {
        fprintf(stderr, "Open Table Error: %s\n", s.ToString().c_str());
 diff --git a/table/table_test.cc b/table/table_test.cc
-index 9827c95d5..2d931f8d3 100644
+index 9827c95d5..7354cdc30 100644
 --- a/table/table_test.cc
 +++ b/table/table_test.cc
 @@ -404,7 +404,7 @@ class TableConstructor : public Constructor {
@@ -2159,12 +2155,12 @@ index 9827c95d5..2d931f8d3 100644
 +  stl_wrappers::KVMap kvmap;
 +  c.Finish(options, ioptions, moptions, table_options,
 +           GetPlainInternalComparator(options.comparator), &keys, &kvmap);
-+  
++
 +  // get file reader
 +  test::StringSink* table_sink = c.TEST_GetSink();
 +  std::unique_ptr<FSRandomAccessFile> source(new test::StringSource(
 +      table_sink->contents(), 0 /* unique_id */, false /* allow_mmap_reads */));
-+  
++
 +  std::unique_ptr<RandomAccessFileReader> table_reader(
 +      new RandomAccessFileReader(std::move(source), "test"));
 +  size_t table_size = table_sink->contents().size();
@@ -2198,7 +2194,7 @@ index 9827c95d5..2d931f8d3 100644
 +       metaindex_iter->Next()) {
 +    if (metaindex_iter->key().ToString() == kHashIndexPrefixesBlock) {
 +      has_hash_prefixes = true;
-+    } else if (metaindex_iter->key().ToString() == 
++    } else if (metaindex_iter->key().ToString() ==
 +               kHashIndexPrefixesMetadataBlock) {
 +      has_hash_metadata = true;
 +    }
@@ -2221,7 +2217,7 @@ index 9827c95d5..2d931f8d3 100644
    ROCKSDB_NAMESPACE::Options options;
    options.compression = kNoCompression;
 diff --git a/util/coding.cc b/util/coding.cc
-index a54324d28..250bf5294 100644
+index a54324d28..fbf6439e6 100644
 --- a/util/coding.cc
 +++ b/util/coding.cc
 @@ -69,6 +69,46 @@ const char* GetVarint32PtrFallback(const char* p, const char* limit,
@@ -2232,7 +2228,7 @@ index a54324d28..250bf5294 100644
 +static inline uint64_t sve2_scalar_to_num(uint64_t varint_part)
 +{
 +  const uint64_t extract_mask = 0x0000000F7F7F7F7FULL;
-+  
++
 +  svuint64_t sv_data   = svdup_u64(varint_part);
 +  svuint64_t sv_mask   = svdup_u64(extract_mask);
 +  svuint64_t sv_result = svbext_u64(sv_data, sv_mask);
@@ -2272,7 +2268,7 @@ index a54324d28..250bf5294 100644
    uint64_t result = 0;
    for (uint32_t shift = 0; shift <= 63 && p < limit; shift += 7) {
 diff --git a/util/coding.h b/util/coding.h
-index 876f181f1..fdfa85dd0 100644
+index 876f181f1..1ad377bf5 100644
 --- a/util/coding.h
 +++ b/util/coding.h
 @@ -18,6 +18,14 @@

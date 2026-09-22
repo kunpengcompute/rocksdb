@@ -1,6 +1,6 @@
-From 0187626911eee0cd7988d0b06d0ebe7ad5e06c29 Mon Sep 17 00:00:00 2001
-From: WangKX <wangkaixin14@huawei.com>
-Date: Thu, 6 Aug 2026 10:45:24 +0800
+From 952e7a3eeaefe55f27a0910bb841fc6968f8caa6 Mon Sep 17 00:00:00 2001
+From: WangKX <1036907114@qq.com>
+Date: Thu, 17 Sep 2026 16:41:18 +0800
 Subject: [PATCH] feat: implement hashsearch optimization for RocksDB
 
 ---
@@ -2272,7 +2272,7 @@ index a54324d28..fbf6439e6 100644
    uint64_t result = 0;
    for (uint32_t shift = 0; shift <= 63 && p < limit; shift += 7) {
 diff --git a/util/coding.h b/util/coding.h
-index 876f181f1..fdfa85dd0 100644
+index 876f181f1..1ad377bf5 100644
 --- a/util/coding.h
 +++ b/util/coding.h
 @@ -18,6 +18,14 @@

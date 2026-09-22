@@ -80,9 +80,18 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
 5. 执行以下命令，合入优化特性。如果没有输出则说明合入成功。
 
+   特别说明：合入0005_fix_hashsearch_problem.patch补丁文件使能之前，需要依次按顺序应用Prefetch预取优化、crc32优化、BloomFilter查找优化、 动态Level容量调整优化对应的0001—0004补丁文件。
+
    ```shell
    cd ~/rocksdb
-   patch -p1 < ~/0005_fix_hashsearch_problem.patch
+   git apply --whitespace=nowarn ~/0005_fix_hashsearch_problem.patch
+   ```
+
+     0005_fix_hashsearch_problem_independent_test.patch补丁文件使能，可以直接在RocksDB源码上单独合入使用该优化特性。
+
+   ```shell
+   cd ~/rocksdb
+   git apply --whitespace=nowarn ~/0005_fix_hashsearch_problem_independent_test.patch
    ```
 
 6. 编译RocksDB的jar包和相关动态库，以使用优化特性。
@@ -109,7 +118,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
       ```
       
    3. 替换本地Maven仓库中的jar包。
-   
+
       ```shell
       cd ~/rocksdb
       cp java/target/rocksdbjni-6.26.1-linux64.jar \
@@ -117,9 +126,9 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
       cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
          ~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1
       ```
-   
+
    4. 提取原生动态库并设置`LD_LIBRARY_PATH`。
-   
+
       ```shell
       # 创建库存放目录（供 YCSB 使用）
       mkdir -p ~/Test/rocksdb-lib
@@ -132,7 +141,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
       # 设置环境变量
       export LD_LIBRARY_PATH=~/Test/rocksdb-lib:$LD_LIBRARY_PATH
       ```
-   
+
       注：以上路径、文件根据实际情况修改。  
 7. 执行YCSB测试，验证HashSearch优化特性是否生效。
 

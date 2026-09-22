@@ -88,7 +88,7 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
 
    ```bash
    cd ~/rocksdb
-   patch -p1 < ~/0001_prefetch_opt.patch
+   git apply --whitespace=nowarn ~/0001_prefetch_opt.patch
    ```
 
 6. 编译RocksDB的jar包和相关动态库，以使用优化特性。
@@ -115,7 +115,7 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
       ```
 
    3. 替换本地Maven仓库中的jar包。
-       
+      
       ```bash
       cd ~/rocksdb
       cp java/target/rocksdbjni-6.26.1-linux64.jar \
@@ -125,7 +125,7 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
       ```
 
    4. 提取原生动态库并设置`LD_LIBRARY_PATH`。
-       
+      
       ```bash
       # 创建库存放目录（供 YCSB 使用）
       mkdir -p ~/Test/rocksdb-lib
