@@ -61,7 +61,7 @@ RocksDB动态Level容量优化特性针对RocksDB 6.26.1版本进行开发，以
 
    ```bash
    cd $HOME/rocksdb
-   patch -p1 < 0004_dynamic_capacity_opt.patch
+   git apply --whitespace=nowarn 0004_dynamic_capacity_opt.patch
    ```
 
 5. 编译RocksDB的jar包和相关动态库，以使用动态Level容量优化特性。
