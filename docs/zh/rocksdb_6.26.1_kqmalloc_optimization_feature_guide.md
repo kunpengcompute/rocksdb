@@ -35,13 +35,15 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
 
 **表3** 操作系统和软件要求<a id="操作系统和软件要求"></a>
 
-| 配置项 | 配置要求 | 获取地址 |
-| ----------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 项目 | 版本 | 获取地址 |
+| --- | --- | --- |
 | 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| gcc版本 | gcc 12.3.1 | openEuler 24.03 LTS SP3版本自带 |
-| Jdk版本 | 11 | 在openEuler 24.03 LTS SP3系统上，确保网络畅通情况下，利用Yum工具直接安装 |
-| RocksDB版本 | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
-| 优化特性补丁 | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
+| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| Java | 11 | 通过yum源安装 |
+| 内存分配优化patch | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
 | kqmalloc二进制 | v0.22.0 | [获取地址](https://repo.boostkit.osinfra.cn/boostcore/kqmalloc/release/v0.22.0/) |
 
 ## 安装和使用特性
@@ -55,22 +57,34 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
    git checkout v6.26.1
    ```
 
-2. 安装yum依赖和配置环境变量。
+2. 下载并安装GCC 12.3.1编译器。
 
    ```bash
-   yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
+   cd ~
+   wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+   tar -zxvf gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+   
+   export PATH=~/gcc-12.3.1-2025.06-aarch64-linux/bin:$PATH
+   export LD_LIBRARY_PATH=~/gcc-12.3.1-2025.06-aarch64-linux/lib64:$LD_LIBRARY_PATH
+   export INCLUDE=~/gcc-12.3.1-2025.06-aarch64-linux/include:$INCLUDE
+   ```
+
+3. 安装yum依赖和配置环境变量。
+
+   ```bash
+   yum install -y git make snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
 
    export JAVA_HOME=/usr/lib/jvm/java-11
    export PATH=$JAVA_HOME/bin:$PATH
    ```
 
-3. （可选）获取优化特性的补丁文件，将其上传到$HOME目录下。
+4. （可选）获取优化特性的补丁文件，将其上传到$HOME目录下。
 
    获取路径请参见[表3操作系统和软件要求](#操作系统和软件要求)。
 
-4. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
+5. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
 
-5. 编译RocksDB的jar包和相关动态库以使能内存分配优化特性。
+6. 编译RocksDB的jar包和相关动态库以使能内存分配优化特性。
 
    1. 编译RocksDB的jar包和相关动态库。
 
@@ -90,7 +104,7 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
          "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
-6. 获取kqmalloc二进制内存库。
+7. 获取kqmalloc二进制内存库。
 
    根据当前操作系统、CPU类型和编译器，从[表3操作系统和软件要求](#操作系统和软件要求)中的获取地址下载`kqmalloc-v0.22.0.tar.gz`，并解压到`$HOME/kqmalloc`目录。kqmalloc二进制的使用环境请参见[kqmalloc二进制使用环境](#kqmalloc二进制使用环境)。
 
@@ -101,12 +115,12 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
    tar -xzf kqmalloc-v0.22.0.tar.gz -C kqmalloc --strip-components=1
    ```
 
-7. 使用`LD_PRELOAD`加载kqmalloc内存库并执行性能测试。
+8. 使用`LD_PRELOAD`加载kqmalloc内存库并执行性能测试。
 
    ```bash
    export LD_PRELOAD="$HOME/kqmalloc/HIP12/lib/libkqmalloc.so"
 
-   cd "$HOME/YCSB_RUN/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
+   cd "$HOME/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
    taskset -c 0-15 ./bin/ycsb run rocksdb -s \
    -P workloads/workloada \
    -p fieldlength=256 -p fieldcount=1 \
@@ -120,7 +134,7 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
 
    **图1** 双特性叠加使能前后性能对比<a id="双特性叠加使能前后性能对比"></a>
 
-   <img src="figures/五特性叠加使能前后性能对比.png" alt="双特性叠加使能前后性能对比" style="zoom:40%;" />
+   ![双特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 

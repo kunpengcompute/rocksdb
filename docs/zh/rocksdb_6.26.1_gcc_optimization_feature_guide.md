@@ -25,13 +25,15 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
 **表2** 操作系统和软件要求<a id="操作系统和软件要求"></a>
 
-| 配置项 | 配置要求 | 获取地址 |
-| ----------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 项目 | 版本 | 获取地址 |
+| --- | --- | --- |
 | 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| gcc版本 | gcc 12.3.1 | openEuler 24.03 LTS SP3版本自带 |
-| Jdk版本 | 11 | 在openEuler 24.03 LTS SP3系统上，确保网络畅通情况下，利用Yum工具直接安装 |
-| RocksDB版本 | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
-| 优化特性补丁 | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
+| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| Java | 11 | 通过yum源安装 |
+| GCC编译优化patch | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
 
 ## 安装和使用特性
 
@@ -44,22 +46,34 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
    git checkout v6.26.1
    ```
 
-2. 安装yum依赖和配置环境变量。
+2. 下载并安装GCC 12.3.1编译器。
 
    ```bash
-   yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
+   cd ~
+   wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+   tar -zxvf gcc-12.3.1-2025.06-aarch64-linux.tar.gz
+   
+   export PATH=~/gcc-12.3.1-2025.06-aarch64-linux/bin:$PATH
+   export LD_LIBRARY_PATH=~/gcc-12.3.1-2025.06-aarch64-linux/lib64:$LD_LIBRARY_PATH
+   export INCLUDE=~/gcc-12.3.1-2025.06-aarch64-linux/include:$INCLUDE
+   ```
+
+3. 安装yum依赖和配置环境变量。
+
+   ```bash
+   yum install -y git make snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
 
    export JAVA_HOME=/usr/lib/jvm/java-11
    export PATH=$JAVA_HOME/bin:$PATH
    ```
 
-3. （可选）获取优化特性的补丁文件，将其上传到$HOME目录下。
+4. （可选）获取优化特性的补丁文件，将其上传到$HOME目录下。
 
    获取路径请参见[表2操作系统和软件要求](#操作系统和软件要求)。
 
-4. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
+5. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
 
-5. 编译RocksDB的jar包和相关动态库以使能GCC编译优化特性。
+6. 编译RocksDB的jar包和相关动态库以使能GCC编译优化特性。
 
    1. 编译RocksDB的jar包和相关动态库。
 
@@ -79,7 +93,7 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
          "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
-6. RocksDB使能GCC编译优化特性。
+7. RocksDB使能GCC编译优化特性。
 
    1. 插桩重新编译RocksDB。
 
@@ -145,14 +159,14 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
          "$HOME/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
-7. 运行性能测试，这里继续以YCSB压测为例。
+8. 运行性能测试，这里继续以YCSB压测为例。
 
    ```bash
    # 删除当前加载数据目录，恢复备份数据，重新进行压测
    rm -rf $HOME/data/workload_data/
    cp -r $HOME/data/workload_data_backup $HOME/data/workload_data/
 
-   cd "$HOME/YCSB_RUN/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
+   cd "$HOME/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
 
    taskset -c 0-15 ./bin/ycsb run rocksdb -s \
    -P workloads/workloada \
@@ -167,7 +181,7 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
    **图1** 双特性叠加使能前后性能对比<a id="双特性叠加使能前后性能对比"></a>
 
-   <img src="figures/五特性叠加使能前后性能对比.png" alt="双特性叠加使能前后性能对比" style="zoom:40%;" />
+   ![双特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
