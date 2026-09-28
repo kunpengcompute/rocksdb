@@ -1,4 +1,4 @@
-# RocksDB 6.26.1内存分配优化 特性指南
+﻿# RocksDB 6.26.1内存分配优化 特性指南
 
 ## 特性描述
 
@@ -19,36 +19,36 @@ kqmalloc通过线程本地缓存和多级无锁缓存降低小对象分配延迟
 
 **表1** 硬件要求
 
-| 项目 | 规格 |
-| ---- | ---- |
+| 项目  | 规格       |
+| --- | -------- |
 | CPU | 鲲鹏950处理器 |
 
 **表2** kqmalloc二进制使用环境<a id="kqmalloc二进制使用环境"></a>
 
-| 操作系统 | CPU类型 | 编译器 |
-| -------- | ------- | ------ |
-| openEuler 20.03 LTS SP1 | 鲲鹏920系列处理器 | GCC 7.3.0 / 毕昇4.2.0 |
-| openEuler 22.03 LTS SP3 | 鲲鹏920系列处理器 | GCC 10.3.1 / 毕昇4.2.0 |
-| openEuler 24.03 LTS SP3 | 鲲鹏950处理器 | GCC 12.3.1 / Clang 14.0.6 |
+| 操作系统                    | CPU类型      | 编译器                       |
+| ----------------------- | ---------- | ------------------------- |
+| openEuler 20.03 LTS SP1 | 鲲鹏920系列处理器 | GCC 7.3.0 / 毕昇4.2.0       |
+| openEuler 22.03 LTS SP3 | 鲲鹏920系列处理器 | GCC 10.3.1 / 毕昇4.2.0      |
+| openEuler 24.03 LTS SP3 | 鲲鹏950处理器   | GCC 12.3.1 / Clang 14.0.6 |
 
 kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求请参见[kqmalloc安装指南](https://www.hikunpeng.com/document/detail/zh/kunpengaccel/system-lib/kqmalloc/docs/zh/kqmalloc/installation_guide.md)。
 
 **表3** 操作系统和软件要求<a id="操作系统和软件要求"></a>
 
-| 项目 | 版本 | 获取地址 |
-| --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
-| GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
-| Java | 11 | 通过yum源安装 |
-| 内存分配优化patch | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
-| kqmalloc二进制 | v0.22.0 | [获取地址](https://repo.boostkit.osinfra.cn/boostcore/kqmalloc/release/v0.22.0/) |
+| 项目          | 版本                      | 获取地址                                                                                                                                  |
+| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 操作系统        | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统        | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB     | 6.26.1                  | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1)                                                                              |
+| GCC         | 12.3.1（24.03 LTS SP3）   | 通过yum源安装                                                                                                                              |
+| GCC         | 12.3.1（22.03 LTS SP4）   | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz)                  |
+| Java        | 11                      | 通过yum源安装                                                                                                                              |
+| 内存分配优化patch | 0001-0005相关补丁           | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches)                                           |
+| kqmalloc二进制 | v0.22.0                 | [获取地址](https://repo.boostkit.osinfra.cn/boostcore/kqmalloc/release/v0.22.0/)                                                          |
 
 ## 安装和使用特性
 
-1. 使用git克隆RocksDB并切换到6.26.1版本，放在$HOME目录下。
+1. 使用git克隆RocksDB并切换到6.26.1版本，放在`$HOME`目录下。
 
    ```bash
    cd $HOME
@@ -63,7 +63,7 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
    cd ~
    wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz
    tar -zxvf gcc-12.3.1-2025.06-aarch64-linux.tar.gz
-   
+
    export PATH=~/gcc-12.3.1-2025.06-aarch64-linux/bin:$PATH
    export LD_LIBRARY_PATH=~/gcc-12.3.1-2025.06-aarch64-linux/lib64:$LD_LIBRARY_PATH
    export INCLUDE=~/gcc-12.3.1-2025.06-aarch64-linux/include:$INCLUDE
@@ -78,30 +78,17 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
    export PATH=$JAVA_HOME/bin:$PATH
    ```
 
-4. （可选）获取优化特性的补丁文件，将其上传到$HOME目录下。
+4. （可选）获取优化特性的补丁文件，将其上传到`$HOME`目录下。
 
    获取路径请参见[表3操作系统和软件要求](#操作系统和软件要求)。
-
 5. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
-
 6. 编译RocksDB的jar包和相关动态库以使能内存分配优化特性。
-
    1. 编译RocksDB的jar包和相关动态库。
 
       ```bash
       cd "$HOME/rocksdb"
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j$nproc DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-      ```
-
-   2. 替换本地Maven仓库中的jar包。
-
-      ```bash
-      cd "$HOME/rocksdb"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar \
-         "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
-         "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
 7. 获取kqmalloc二进制内存库。
@@ -115,22 +102,17 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
    tar -xzf kqmalloc-v0.22.0.tar.gz -C kqmalloc --strip-components=1
    ```
 
-8. 使用`LD_PRELOAD`加载kqmalloc内存库并执行性能测试。
+   1. 使用`LD_PRELOAD`加载kqmalloc内存库。
 
-   ```bash
-   export LD_PRELOAD="$HOME/kqmalloc/HIP12/lib/libkqmalloc.so"
+      ```bash
+      export LD_PRELOAD="$HOME/kqmalloc/HIP12/lib/libkqmalloc.so"
+      ```
 
-   cd "$HOME/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
-   taskset -c 0-15 ./bin/ycsb run rocksdb -s \
-   -P workloads/workloada \
-   -p fieldlength=256 -p fieldcount=1 \
-   -p recordcount=100000000 -p operationcount=100000000 \
-   -p rocksdb.dir="$HOME/data/workload_data/" \
-   -p rocksdb.optionsfile="$HOME/data/configs/dbsnappyrun.ini" \
-   -p rocksdb.cfs=default -p table=default -threads 5
-   ```
+8. 执行测试，验证内存分配优化特性是否生效。
 
-   叠加使用GCC编译优化特性和内存分配优化特性后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[双特性叠加使能前后性能对比](#双特性叠加使能前后性能对比)所示。
+   以YCSB压测为例，参考[鲲鹏YCSB测试指南](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)。
+
+   测试中每个RocksDB实例绑定8核、起16线程，使用包含1亿条数据的数据集、value大小为256B，以5个YCSB客户端线程依次执行YCSB Workload A-F。叠加使用GCC编译优化特性和内存分配优化特性后，性能平均提升10%，优化前后对比效果如[双特性叠加使能前后性能对比](#双特性叠加使能前后性能对比)所示。
 
    **图1** 双特性叠加使能前后性能对比<a id="双特性叠加使能前后性能对比"></a>
 
@@ -149,6 +131,6 @@ cat /proc/sys/kernel/randomize_va_space
 
 ## 修订记录
 
-|文档版本| 发布日期   | 修改说明         |
-|----------| ---------- | ---------------- |
-|01| 2026-09-30 | 第一次正式发布。 |
+| 文档版本 | 发布日期       | 修改说明     |
+| ---- | ---------- | -------- |
+| 01   | 2026-09-30 | 第一次正式发布。 |
