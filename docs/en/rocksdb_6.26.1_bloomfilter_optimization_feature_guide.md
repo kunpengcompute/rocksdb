@@ -1,4 +1,4 @@
-# RocksDB 6.26.1 Bloom Filter SVE2 Vectorization-based Optimization Feature Guide
+# RocksDB 6.26.1 Filter Optimization Feature Guide
 
 <!-- md-trans-meta sourceCommit=d70fbb411c921cba0ce6bde35a94ac7ed5623923 translatedAt=2026-09-14T02:05:10.189Z pushedAt=2026-09-15T08:23:22.993Z -->
 
