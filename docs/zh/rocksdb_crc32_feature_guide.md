@@ -58,7 +58,6 @@ Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 a
 | CRC32C优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
 | CRC32C优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
 
-
 ## 安装环境
 
 ### For RocksDB 6.1.2
@@ -136,11 +135,6 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
         wget https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar --no-check-certificate
         wget https://repo1.maven.org/maven2/junit/junit/4.12/junit-4.12.jar --no-check-certificate
         ```
-
-6. （可选）通过YCSB工具测试可以得到使能本特性前后的性能提升效果，详细测试步骤请参见《[YCSB测试指导](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)》。<br>使用RocksDB CRC32优化及RocksDB Filter优化双特性叠加，可以使16U规格下两个用例workloada和workloadc的性能平均提升5%，优化前后对比效果如[**图 1** 双特性叠加使能前后性能对比](#优化特性使能前后性能对比)所示。
-
-    **图 1** 双特性叠加使能前后性能对比<a name="fig1620685015314"></a><a id="优化特性使能前后性能对比"></a><br>
-    ![](figures/优化特性使能前后性能对比.png "优化特性使能前后性能对比")
 
 ### For RocksDB 6.26.1
 
@@ -235,14 +229,10 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
       export LD_LIBRARY_PATH=~/Test/rocksdb-lib:$LD_LIBRARY_PATH
       ```
 
-7. 执行YCSB测试，验证CRC32C标矢量混合优化特性是否生效。
+## 性能收益
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
-
-   **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
-
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
-
+通过YCSB工具测试可以得到使能本特性前后的性能提升效果，详细测试步骤请参见《YCSB测试指导》。
+使用RocksDB CRC32优化特性可以使16U规格下两个用例workloada和workloadc的性能平均提升5%~10%。
 
 ## 安全检查与加固
 
