@@ -16,20 +16,32 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
 
 本特性通过硬件加速CRC32减少校验开销，提升RocksDB在鲲鹏服务器中的整体性能表现与系统稳定性。
 
-RocksDB支持多种CRC32实现，能够根据运行环境自动选择最优方案。然而，在ARM平台下，当前版本尚未针对其架构提供专用优化，导致默认采用软件实现，性能显著低于硬件加速方案。尤其在内核态中CRC32函数调用频繁时，该算法已成为系统性能瓶颈，严重影响I/O吞吐。本特性基于鲲鹏920新型号处理器和鲲鹏950处理器，使用汇编、pmull指令等加速方式优化CRC32算法，来提升校验效率，业务功能逻辑无变化。
+RocksDB支持多种CRC32实现，能够根据运行环境自动选择最优方案。然而，在ARM平台下，当前版本尚未针对其架构提供专用优化，导致默认采用软件实现，性能显著低于硬件加速方案。尤其在数据库存储引擎内核中CRC32函数调用频繁时，该算法已成为系统性能瓶颈，严重影响I/O吞吐。本特性基于鲲鹏920新型号处理器和鲲鹏950处理器，使用汇编、pmull指令等加速方式优化CRC32算法，来提升校验效率，业务功能逻辑无变化。
 
 **查看方式**
 
-检查当前CPU是否支持CRC32：
+检查鲲鹏920新型号处理器是否支持CRC32特性：
 
 ```shell
 lscpu | grep Flags | grep crc32
 ```
 
-回显结果中包含crc32，表示CPU支持CRC32硬件指令。
+回显结果中包含crc32，满足本特性使能条件。
 
-```txt
+```output
 Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs sb dcpodp flagm2 frint svei8mm svef32mm svef64mm svebf16 i8mm bf16 dgh rng ecv
+```
+
+检查鲲鹏950处理器是否支持CRC32特性：
+
+```bash
+lscpu |grep Flags
+```
+
+回显结果中包含pmull、crc32、sve2、svepmull，满足本特性使能条件。
+
+```output
+Flags: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs sb dcpodp sve2 sveaes svepmull svebitperm svesha3 svesm4 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng ecv afp rpres wfxt rprfm hbc ls64 ls64_v
 ```
 
 ## 环境要求
