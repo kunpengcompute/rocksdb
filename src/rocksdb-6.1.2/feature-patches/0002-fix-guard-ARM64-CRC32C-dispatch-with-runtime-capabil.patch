@@ -1,0 +1,107 @@
+From 998139aa822ca8ebf38d4cc1561c2cb45bff39c6 Mon Sep 17 00:00:00 2001
+From: Sun_liuy <1422711030@qq.com>
+Date: Thu, 5 Nov 2026 11:53:27 +0800
+Subject: [PATCH] fix: guard ARM64 CRC32C dispatch with runtime capabilities
+
+Require CRC32 and PMULL before selecting assembly, and fall back to the
+portable implementation when CRC32 is unavailable. Restrict the existing
+SVE2 kernel to supported capabilities, per-thread VL and input lengths.
+Add independent CRC32C boundary and incremental regression coverage.
+
+Related issue: https://gitcode.com/boostkit/rocksdb/issues/12
+---
+ util/crc32c.cc      | 24 ++++++++++++++++++++----
+ util/crc32c_test.cc | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 52 insertions(+), 4 deletions(-)
+
+diff --git a/util/crc32c.cc b/util/crc32c.cc
+index 3ea5276..785031a 100644
+--- a/util/crc32c.cc
++++ b/util/crc32c.cc
+@@ -13,8 +13,10 @@
+ #include <stdint.h>
+ #if defined(__aarch64__) && defined(__linux__)
+ #include "crc32c_asm.h"
++#include <limits.h>
+ #include <sys/auxv.h>
+ #include <asm/hwcap.h>
++#include <sys/prctl.h>
+ #endif
+ #ifdef HAVE_SSE42
+ #include <nmmintrin.h>
+@@ -360,11 +362,25 @@ static inline void Fast_CRC32(uint64_t* l, uint8_t const **p) {
+ template<void (*CRC32)(uint64_t*, uint8_t const**)>
+ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
+ #if defined(__aarch64__) && defined(__linux__)
+-  unsigned long auxval2 = getauxval(AT_HWCAP2);
+-  if (auxval2 & HWCAP2_SVE2) {
+-    return ~crc32_iscsi_sve2(buf, size, ~crc);
++  static const unsigned long hwcap = getauxval(AT_HWCAP);
++  if (hwcap & HWCAP_CRC32) {
++    if (hwcap & HWCAP_PMULL) {
++#if defined(HWCAP_SVE) && defined(HWCAP2_SVE2) && \
++    defined(HWCAP2_SVEPMULL) && defined(PR_SVE_GET_VL) && defined(PR_SVE_VL_LEN_MASK)
++      static const unsigned long hwcap2 = getauxval(AT_HWCAP2);
++      const unsigned long sve_caps = HWCAP2_SVE2 | HWCAP2_SVEPMULL;
++      if ((hwcap & HWCAP_SVE) && (hwcap2 & sve_caps) == sve_caps && size <= INT_MAX) {
++        // 此汇编使用固定 32 字节常量；向量长度由当前线程决定。
++        const int vl = prctl(PR_SVE_GET_VL);
++        if (vl >= 0 && (vl & PR_SVE_VL_LEN_MASK) == 32) {
++          return ~crc32_iscsi_sve2(buf, size, ~crc);
++        }
++      }
++#endif
++      return ~crc32_iscsi_x6(buf, size, ~crc);
++    }
++    return ~crc32_iscsi_crc_ext(buf, size, ~crc);
+   }
+-  return ~crc32_iscsi_x6(buf, size, ~crc);
+ #endif
+   const uint8_t *p = reinterpret_cast<const uint8_t *>(buf);
+   const uint8_t *e = p + size;
+diff --git a/util/crc32c_test.cc b/util/crc32c_test.cc
+index d598358..4c58fa6 100644
+--- a/util/crc32c_test.cc
++++ b/util/crc32c_test.cc
+@@ -129,6 +129,38 @@ TEST(CRC, Extend) {
+             Extend(Value("hello ", 6), "world", 5));
+ }
+ 
++TEST(CRC, DispatchBoundaries) {
++  ASSERT_EQ(0xe3069283U, Value("123456789", 9));
++  std::string data(4096 + 16, '\0');
++  for (size_t i = 0; i < data.size(); ++i) {
++    data[i] = static_cast<char>(i * 37 + 11);
++  }
++  const size_t lengths[] = {0, 1, 7, 8, 15, 16, 63, 64, 255, 256,
++                            257, 1023, 1024, 1025, 2048, 4096};
++  const uint32_t seeds[] = {0, 0xffffffffU, 0x12345678U};
++  for (size_t offset = 0; offset < 16; ++offset) {
++    for (size_t length : lengths) {
++      for (uint32_t seed : seeds) {
++        // 按位计算独立参考值，覆盖汇编分块边界和非对齐输入。
++        uint32_t expected = ~seed;
++        for (size_t i = 0; i < length; ++i) {
++          expected ^= static_cast<unsigned char>(data[offset + i]);
++          for (int bit = 0; bit < 8; ++bit) {
++            expected = (expected >> 1) ^
++                       ((expected & 1) ? 0x82f63b78U : 0);
++          }
++        }
++        expected = ~expected;
++        ASSERT_EQ(expected, Extend(seed, data.data() + offset, length));
++        const size_t split = length / 2;
++        const uint32_t partial = Extend(seed, data.data() + offset, split);
++        ASSERT_EQ(expected, Extend(partial, data.data() + offset + split,
++                                   length - split));
++      }
++    }
++  }
++}
++
+ TEST(CRC, Mask) {
+   uint32_t crc = Value("foo", 3);
+   ASSERT_NE(crc, Mask(crc));
+-- 
+2.54.0.windows.1
+
