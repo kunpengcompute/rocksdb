@@ -1,5 +1,5 @@
 From 4fcd0f73382ad76eac5d4e0aca2ae14d3b91cc50 Mon Sep 17 00:00:00 2001
-From: s00842512 <1422711030@qq.com>
+From: Sun_liuy <1422711030@qq.com>
 Date: Mon, 3 Aug 2026 19:11:49 +0800
 Subject: [PATCH] feat: implement dynamic capacity optimization for RocksDB
  6.26.1
