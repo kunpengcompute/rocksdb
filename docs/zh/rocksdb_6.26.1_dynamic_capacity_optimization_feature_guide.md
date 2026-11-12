@@ -1,10 +1,12 @@
 # RocksDB 6.26.1动态容量优化 特性指南
 
+本文档介绍RocksDB 6.26.1动态容量优化特性，通过动态调整相邻层间的容量比扩大底层容量、减少查询访问的层级及不必要的compaction，适用于需要降低读写放大、改善读写性能的用户。
+
 ## 特性描述
 
 ### 简介
 
-本文主要介绍RocksDB 6.26.1动态Level容量优化特性的原理、安装和使用方法。
+本文主要介绍RocksDB 6.26.1动态容量优化特性的原理、安装和使用方法。
 RocksDB原有的Level compaction使用固定的层级容量增长比例。在数据规模持续增长以及读写混合负载下，该策略可能增加查询需要访问的层级数量，并在启用新层级时立即触发compaction，导致额外的I/O开销，影响读写性能。动态Level容量优化特性根据层级动态调整容量比例，扩大底层可容纳的数据量，减少查询需要访问的层级及不必要的compaction，从而降低读放大和写放大，改善读写性能。该特性不改变MemTable、WAL或SST文件格式。
 
 ### 原理描述
@@ -25,17 +27,17 @@ RocksDB原有的Level compaction使用固定的层级容量增长比例。在数
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [openEuler 24.03 LTS SP3镜像下载页面](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [openEuler 22.03 LTS SP4镜像下载页面](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [RocksDB 6.26.1源码仓库](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [GCC 12.3.1编译器软件包下载地址](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 | Java | 11 | 通过yum源安装 |
-| 动态Level容量优化patch | 0004_dynamic_capacity_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
+| 动态容量优化patch | 0004_dynamic_capacity_opt.patch | [动态容量优化patch获取路径](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
 
 ## 安装和使用特性
 
-RocksDB动态Level容量优化特性针对RocksDB 6.26.1版本进行开发，以patch文件形式提供。安装和使用该特性需先在RocksDB源码中应用该patch文件，再编译RocksDB。
+RocksDB动态容量优化特性针对RocksDB 6.26.1版本进行开发，以patch文件形式提供。安装和使用该特性需先在RocksDB源码中应用该patch文件，再编译RocksDB。
 
 1. 使用git克隆RocksDB并切换到6.26.1版本，放在$HOME目录下。
 
@@ -71,14 +73,14 @@ RocksDB动态Level容量优化特性针对RocksDB 6.26.1版本进行开发，以
 
    获取路径请参见[表2操作系统和软件要求](#操作系统和软件要求)。
 
-5. 执行以下命令，合入动态Level容量优化特性。如果没有输出则说明合入成功。
+5. 执行以下命令，合入动态容量优化特性。如果没有输出则说明合入成功。
 
    ```bash
    cd $HOME/rocksdb
    git apply --whitespace=nowarn 0004_dynamic_capacity_opt.patch
    ```
 
-6. 编译RocksDB的jar包和相关动态库，以使用动态Level容量优化特性。
+6. 编译RocksDB的jar包和相关动态库，以使用动态容量优化特性。
 
    1. 编译RocksDB的jar包和相关动态库。
 
@@ -97,13 +99,13 @@ RocksDB动态Level容量优化特性针对RocksDB 6.26.1版本进行开发，以
          ~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1
       ```
 
-7. 执行YCSB测试，验证动态Level容量优化特性是否生效。
+7. 执行YCSB测试，验证动态容量优化特性是否生效。
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
+   预取优化、CRC32优化、Filter优化、动态容量优化、Hash索引优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
 
    **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
 
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
+   ![五特性叠加使能前后的YCSB workload a-f性能柱状对比，使能后各负载性能明显提升](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
