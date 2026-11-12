@@ -1,5 +1,7 @@
 # RocksDB 6.26.1 GCC编译优化 特性指南
 
+本文档介绍RocksDB 6.26.1 GCC编译优化特性，说明通过构建脚本参数启用GCC编译优化的方法、环境要求及验证流程，适用于需要为RocksDB启用GCC编译优化特性的用户。
+
 ## 特性描述
 
 ### 简介
@@ -27,11 +29,11 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [openEuler-24.03-LTS-SP3代码仓库](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [openEuler-22.03-LTS-SP4代码仓库](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [rocksdb仓库（v6.26.1分支）](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [鲲鹏编译工具下载链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 | Java | 11 | 通过yum源安装 |
 | GCC编译优化patch | 0001-0005相关补丁 | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches) |
 
@@ -52,7 +54,7 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
    cd ~
    wget https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz
    tar -zxvf gcc-12.3.1-2025.06-aarch64-linux.tar.gz
-   
+
    export PATH=~/gcc-12.3.1-2025.06-aarch64-linux/bin:$PATH
    export LD_LIBRARY_PATH=~/gcc-12.3.1-2025.06-aarch64-linux/lib64:$LD_LIBRARY_PATH
    export INCLUDE=~/gcc-12.3.1-2025.06-aarch64-linux/include:$INCLUDE
@@ -73,27 +75,7 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
 5. （可选）进入`$HOME/rocksdb`目录，按照feature-patches目录中的实际文件名依次应用0001-0005相关补丁。如果没有输出则说明合入成功。
 
-6. 编译RocksDB的jar包和相关动态库以使能GCC编译优化特性。
-
-   1. 编译RocksDB的jar包和相关动态库。
-
-      ```bash
-      cd "$HOME/rocksdb"
-      make clean
-      PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j$nproc DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-      ```
-
-   2. 替换本地Maven仓库中的jar包。
-
-      ```bash
-      cd "$HOME/rocksdb"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar \
-         "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
-         "~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
-      ```
-
-7. RocksDB使能GCC编译优化特性。
+6. RocksDB使能GCC编译优化特性。
 
    1. 插桩重新编译RocksDB。
 
@@ -112,26 +94,11 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j$nproc DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-
-      cp java/target/rocksdbjni-6.26.1-linux64.jar \
-         "$HOME/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
-         "$HOME/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
-   2. 运行压测进行采样，这里以YCSB压测为例：使用预热后的数据连续执行workload a-f性能压测。插桩构建运行较慢，完成后在`-fprofile-generate`指定的目录检查热点文件是否生成。
+   2. 运行压测进行采样。
 
-      ```bash
-      cd "$HOME/YCSB_RUN/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
-
-      taskset -c 0-15 ./bin/ycsb run rocksdb -s \
-      -P workloads/workloada \
-      -p fieldlength=256 -p fieldcount=1 \
-      -p recordcount=100000000 -p operationcount=100000000 \
-      -p rocksdb.dir="$HOME/data/workload_data/" \
-      -p rocksdb.optionsfile="$HOME/data/configs/dbsnappyrun.ini" \
-      -p rocksdb.cfs=default -p table=default -threads 5
-      ```
+      以YCSB压测为例，参考[鲲鹏YCSB测试指南](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)。
 
    3. 重新编译优化版本RocksDB。
 
@@ -152,32 +119,13 @@ RocksDB的编译流程包括“插桩构建、负载测试、反馈构建”三�
 
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j$nproc DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
-
-      cp java/target/rocksdbjni-6.26.1-linux64.jar \
-         "$HOME/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar"
-      cp java/target/rocksdbjni-6.26.1-linux64.jar.sha1 \
-         "$HOME/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar.sha1"
       ```
 
-8. 运行性能测试，这里继续以YCSB压测为例。
+7. 执行测试，验证GCC编译优化特性是否生效。
 
-   ```bash
-   # 删除当前加载数据目录，恢复备份数据，重新进行压测
-   rm -rf $HOME/data/workload_data/
-   cp -r $HOME/data/workload_data_backup $HOME/data/workload_data/
+   以YCSB压测为例，参考[鲲鹏YCSB测试指南](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)。
 
-   cd "$HOME/YCSB_RUN/ycsb-rocksdb-binding-0.18.0-SNAPSHOT"
-
-   taskset -c 0-15 ./bin/ycsb run rocksdb -s \
-   -P workloads/workloada \
-   -p fieldlength=256 -p fieldcount=1 \
-   -p recordcount=100000000 -p operationcount=100000000 \
-   -p rocksdb.dir="$HOME/data/workload_data/" \
-   -p rocksdb.optionsfile="$HOME/data/configs/dbsnappyrun.ini" \
-   -p rocksdb.cfs=default -p table=default -threads 5
-   ```
-
-   叠加使用GCC编译优化特性和内存分配优化特性后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[双特性叠加使能前后性能对比](#双特性叠加使能前后性能对比)所示。
+   测试中每个RocksDB实例绑定8核、起16线程，使用包含1亿条数据的数据集、value大小为256B，以5个YCSB客户端线程依次执行YCSB Workload A-F。叠加使用GCC编译优化特性和内存分配优化特性后，性能平均提升10%，优化前后对比效果如[双特性叠加使能前后性能对比](#双特性叠加使能前后性能对比)所示。
 
    **图1** 双特性叠加使能前后性能对比<a id="双特性叠加使能前后性能对比"></a>
 
@@ -192,7 +140,7 @@ echo 2 > /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![](figures/zh-cn_image_0000002504021297.png)
+![执行命令后回显randomize_va_space取值为2的终端截图](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 
