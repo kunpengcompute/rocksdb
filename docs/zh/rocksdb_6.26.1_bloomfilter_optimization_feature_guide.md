@@ -1,10 +1,12 @@
-# RocksDB 6.26.1 布隆过滤器SVE2向量化优化 特性指南
+# RocksDB 6.26.1 Filter优化 特性指南
+
+本文档介绍RocksDB 6.26.1 Filter优化，阐述该特性的优化原理，并给出环境要求、补丁合入与编译验证的操作步骤，适用于需要在鲲鹏平台上提升布隆过滤器查询性能的用户。
 
 ## 特性描述
 
 ### 简介
 
-本文主要介绍RocksDB 6.26.1数据库布隆过滤器查询优化特性的优化原理和安装使用方法。
+本文主要介绍RocksDB 6.26.1 Filter优化特性的优化原理和安装使用方法。
 
 RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值存储引擎，广泛运用于数据库、缓存系统及实时数据处理等场景。
 
@@ -36,13 +38,13 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [openEuler 24.03 LTS SP3 ISO镜像下载链接（aarch64）](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [openEuler 22.03 LTS SP4 ISO镜像下载链接（aarch64）](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [RocksDB 6.26.1源码仓库](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [鲲鹏GCC 12.3.1编译器安装包下载地址](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 | Java | 11 | 通过yum源安装 |
-| 布隆过滤器SVE2向量化优化patch | 0003_bloomfilter_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0003_bloomfilter_opt.patch) |
+| Filter优化patch | 0003_bloomfilter_opt.patch | [优化特性补丁文件0003_bloomfilter_opt.patch下载](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0003_bloomfilter_opt.patch) |
 
 ## 安装环境
 
@@ -138,11 +140,11 @@ RocksDB查询SST文件时，布隆过滤器先根据键的哈希值检查位数�
 
 7. 执行YCSB测试，验证布隆过滤器SVE2向量化优化特性是否生效。
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
+   预取优化、CRC32优化、Filter优化、动态容量优化、Hash索引优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
 
    **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
 
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
+   ![预取优化、CRC32优化、Filter优化、动态容量优化、Hash索引优化五特性叠加使能前后的YCSB workload a-f性能柱状对比，使能后各负载吞吐量均明显提升](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
@@ -153,7 +155,7 @@ echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![ASLR安全检查示意图](figures/zh-cn_image_0000002504021297.png)
+![终端中执行ASLR加固命令并回显randomize_va_space取值为2的检查结果截图](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 

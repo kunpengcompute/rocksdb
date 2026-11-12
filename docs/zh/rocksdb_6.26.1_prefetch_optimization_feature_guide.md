@@ -1,4 +1,4 @@
-# RocksDB 6.26.1 Memtable跳表、SST Block预取优化 特性指南
+# RocksDB 6.26.1 预取优化 特性指南
 
 ## 特性描述
 

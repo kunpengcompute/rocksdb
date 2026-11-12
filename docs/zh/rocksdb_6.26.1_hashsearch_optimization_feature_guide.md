@@ -1,4 +1,4 @@
-# RocksDB HashSearch优化 特性指南
+# RocksDB Hash索引优化 特性指南
 
 ## 特性描述
 
