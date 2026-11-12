@@ -58,7 +58,6 @@ Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 a
 | CRC32优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
 | CRC32优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
 
-
 ## 安装环境
 
 ### For RocksDB 6.1.2
@@ -242,7 +241,6 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
    **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
 
    ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
-
 
 ## 安全检查与加固
 
