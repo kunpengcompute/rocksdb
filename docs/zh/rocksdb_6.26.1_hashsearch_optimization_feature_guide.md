@@ -1,10 +1,12 @@
-# RocksDB Hash索引优化 特性指南
+# RocksDB 6.26.1 HashSearch优化 特性指南
+
+本文档介绍RocksDB HashSearch优化特性，通过优化前缀配置匹配、HashSearch元数据加载和block解析过程缩小候选数据块查找范围、减少无效Index Block比较和磁盘I/O，适用于需要安装和使用该优化特性的用户。
 
 ## 特性描述
 
 ### 简介
 
-本文主要介绍RocksDB数据库Index_block HashSearch优化特性的优化原理和安装使用方法。
+本文主要介绍RocksDB数据库HashSearch优化特性的优化原理和安装使用方法。
 
 RocksDB是由Meta（原Facebook）开发的一款高性能、嵌入式、持久化键值存储引擎，基于C++实现，支持嵌入式使用，也可作为客户端-服务器（C/S）模式下的存储数据库。RocksDB采用Log-Structured Merge-Tree（LSM-Tree）数据结构，通过将随机写入转化为顺序写入，显著提升写入吞吐量，尤其适用于高并发写入场景。同时，RocksDB在点查询与范围查询方面也表现出色，广泛应用于数据库、缓存系统及实时数据处理等场景。
 
@@ -32,13 +34,13 @@ RocksDB是由Meta（原Facebook）开发的一款高性能、嵌入式、持久�
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [openEuler-24.03-LTS-SP3-aarch64-dvd.iso下载](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [openEuler-22.03-LTS-SP4-aarch64-dvd.iso下载](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [RocksDB v6.26.1源码仓库](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [鲲鹏GCC 12.3.1编译器压缩包下载](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 | Java | 11 | 通过yum源安装 |
-| HashSearch优化patch | 0005_fix_hashsearch_problem.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0005_fix_hashsearch_problem.patch) |
+| HashSearch优化patch | 0005_fix_hashsearch_problem.patch | [0005_fix_hashsearch_problem.patch补丁文件下载](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0005_fix_hashsearch_problem.patch) |
 
 ## 安装和使用特性
 
@@ -46,7 +48,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
 1. 使用git克隆RocksDB并切换到6.26.1版本，放在主目录“\~”下。
 
-   ```shell
+   ```bash
    cd ~
    git clone https://github.com/facebook/rocksdb.git
    cd rocksdb/
@@ -67,7 +69,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
 3. 安装yum依赖和环境变量配置。
 
-   ```shell
+   ```bash
    yum install -y git make snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
    
    export JAVA_HOME=/usr/lib/jvm/java-11
@@ -80,16 +82,16 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
 5. 执行以下命令，合入优化特性。如果没有输出则说明合入成功。
 
-   特别说明：合入0005_fix_hashsearch_problem.patch补丁文件使能之前，需要依次按顺序应用Prefetch预取优化、crc32优化、BloomFilter查找优化、 动态Level容量调整优化对应的0001—0004补丁文件。
+   特别说明：合入0005_fix_hashsearch_problem.patch补丁文件使能之前，需要依次按顺序应用预取优化、crc32优化、Filter优化、 动态容量调整优化对应的0001—0004补丁文件。
 
-   ```shell
+   ```bash
    cd ~/rocksdb
    git apply --whitespace=nowarn ~/0005_fix_hashsearch_problem.patch
    ```
 
      0005_fix_hashsearch_problem_independent_test.patch补丁文件使能，可以直接在RocksDB源码上单独合入使用该优化特性。
 
-   ```shell
+   ```bash
    cd ~/rocksdb
    git apply --whitespace=nowarn ~/0005_fix_hashsearch_problem_independent_test.patch
    ```
@@ -98,14 +100,14 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
    1. 编译RocksDB的jar包和相关动态库。
 
-      ```shell
+      ```bash
       make clean
       PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
       ```
 
    2. （可选）若是编译过程中报缺少jar包的错误，可以先清理文件，再手动下载缺少的jar包，然后重新进行编译。
 
-      ```shell
+      ```bash
       cd ~/rocksdb
       make clean
       mkdir -p java/test-libs
@@ -119,7 +121,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
       
    3. 替换本地Maven仓库中的jar包。
 
-      ```shell
+      ```bash
       cd ~/rocksdb
       cp java/target/rocksdbjni-6.26.1-linux64.jar \
          ~/.m2/repository/org/rocksdb/rocksdbjni/6.26.1/rocksdbjni-6.26.1.jar
@@ -129,7 +131,7 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
 
    4. 提取原生动态库并设置`LD_LIBRARY_PATH`。
 
-      ```shell
+      ```bash
       # 创建库存放目录（供 YCSB 使用）
       mkdir -p ~/Test/rocksdb-lib
       # 清空旧文件
@@ -145,11 +147,11 @@ RocksDB index_block HashSearch优化特性针对RocksDB 6.26.1版本进行开发
       注：以上路径、文件根据实际情况修改。  
 7. 执行YCSB测试，验证HashSearch优化特性是否生效。
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
+   预取优化、CRC32优化、Filter优化、动态容量优化、HashSearch优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
 
    **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
 
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
+   ![五特性叠加使能前后YCSB workbad a-f的查询性能柱状对比，使能后各负载性能明显高于未使能](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
@@ -160,7 +162,7 @@ echo 2 > /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![ASLR安全检查示意图](figures/zh-cn_image_0000002504021297.png)
+![执行ASLR加固命令后randomize_va_space取值为2的终端回显与校验结果截图](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 

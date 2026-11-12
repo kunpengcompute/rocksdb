@@ -1,16 +1,18 @@
 ﻿# RocksDB 6.26.1内存分配优化 特性指南
 
+本文档介绍RocksDB 6.26.1内存分配优化特性，通过kqmalloc多线程动态库替换进程的默认内存分配器，降低小对象分配延迟与并发竞争，适用于需要在鲲鹏平台提升RocksDB内存分配效率的用户。
+
 ## 特性描述
 
 ### 简介
 
 本文介绍RocksDB数据库通过`kqmalloc`内存分配器进行内存分配优化的方法、环境要求及验证流程。
-RocksDB作为嵌入式键值存储引擎，读写、缓存、memtable、flush、compaction等操作会频繁申请和释放内存，容易在分配路径上产生额外开销和并发竞争。因此需要降低内存分配成本，并改善并发场景下的内存管理效率。
+RocksDB作为嵌入式键值存储引擎，读写、缓存、MemTable、flush、compaction等操作会频繁申请和释放内存，容易在分配路径上产生额外开销和并发竞争。因此需要降低内存分配成本，并改善并发场景下的内存管理效率。
 本特性不修改RocksDB业务代码，通过脚本和链接配置切换进程的内存分配库。可以单独使用该特性，也可与GCC编译优化特性组合使用。
 
 ### 原理描述
 
-RocksDB作为嵌入式键值存储引擎，在上层应用或测试程序的进程内运行。内存分配优化特性使用kqmalloc多线程动态库替换该进程的默认内存分配器，覆盖RocksDB在读写、缓存、memtable、flush、compaction等路径中产生的标准内存分配请求。
+RocksDB作为嵌入式键值存储引擎，在上层应用或测试程序的进程内运行。内存分配优化特性使用kqmalloc多线程动态库替换该进程的默认内存分配器，覆盖RocksDB在读写、缓存、MemTable、flush、compaction等路径中产生的标准内存分配请求。
 kqmalloc通过线程本地缓存和多级无锁缓存降低小对象分配延迟及并发竞争，通过精细化的大小分级降低内存碎片，并通过透明大页、惰性释放和脏页回收降低TLB未命中和页面管理开销。
 
 ## 已验证环境
@@ -37,13 +39,13 @@ kqmalloc二进制运行环境要求glibc版本不低于2.34，详细安装要求
 
 | 项目          | 版本                      | 获取地址                                                                                                                                  |
 | ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 操作系统        | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统        | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB     | 6.26.1                  | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1)                                                                              |
+| 操作系统        | openEuler 24.03 LTS SP3 | [openEuler 24.03 LTS SP3系统镜像（everything-aarch64-dvd.iso）下载地址](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统        | openEuler 22.03 LTS SP4 | [openEuler 22.03 LTS SP4系统镜像（everything-aarch64-dvd.iso）下载地址](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB     | 6.26.1                  | [RocksDB v6.26.1源码仓库](https://github.com/facebook/rocksdb/tree/v6.26.1)                                                                              |
 | GCC         | 12.3.1（24.03 LTS SP3）   | 通过yum源安装                                                                                                                              |
-| GCC         | 12.3.1（22.03 LTS SP4）   | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz)                  |
+| GCC         | 12.3.1（22.03 LTS SP4）   | [GCC 12.3.1编译器包（gcc-12.3.1-2025.06-aarch64-linux.tar.gz）下载地址](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz)                  |
 | Java        | 11                      | 通过yum源安装                                                                                                                              |
-| 内存分配优化patch | 0001-0005相关补丁           | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches)                                           |
+| 内存分配优化patch | 0001-0005相关补丁           | [RocksDB 6.26.1内存分配优化特性补丁（feature-patches目录）下载地址](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches)                                           |
 | kqmalloc二进制 | v0.22.0                 | [获取地址](https://repo.boostkit.osinfra.cn/boostcore/kqmalloc/release/v0.22.0/)                                                          |
 
 ## 安装和使用特性
@@ -127,7 +129,7 @@ echo 2 > /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![](figures/zh-cn_image_0000002504021297.png)
+![终端命令回显截图，查询/proc/sys/kernel/randomize_va_space后返回值为2，表明已开启完全地址空间随机化](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 
