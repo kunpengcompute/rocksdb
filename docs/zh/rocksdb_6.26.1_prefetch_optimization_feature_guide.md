@@ -1,4 +1,6 @@
-# RocksDB 6.26.1 Memtable跳表、SST Block预取优化 特性指南
+# RocksDB 6.26.1预取优化 特性指南
+
+本文档介绍RocksDB 6.26.1预取优化特性，说明该特性的优化原理、安装配置步骤与YCSB验证方法，适用于需要在鲲鹏环境使能该特性的数据库开发与运维人员。
 
 ## 特性描述
 
@@ -38,13 +40,13 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [openEuler 24.03 LTS SP3 ISO镜像](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [openEuler 22.03 LTS SP4 ISO镜像](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+| RocksDB | 6.26.1 | [RocksDB v6.26.1源码](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [鲲鹏GCC 12.3.1编译器安装包](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 | Java | 11 | 通过yum源安装 |
-| Memtable跳表、SST Block预取优化patch | 0001_prefetch_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0001_prefetch_opt.patch) |
+| 预取优化patch | 0001_prefetch_opt.patch | [0001_prefetch_opt.patch补丁文件下载](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0001_prefetch_opt.patch) |
 
 ## 安装环境
 
@@ -139,13 +141,13 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
       export LD_LIBRARY_PATH=~/Test/rocksdb-lib:$LD_LIBRARY_PATH
       ```
 
-7. 执行YCSB测试，验证Memtable跳表、SST Block预取优化特性是否生效。
+7. 执行YCSB测试，验证预取优化特性是否生效。
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
+   预取优化、CRC32优化、Filter优化、动态容量优化、HashSearch优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
 
    **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
 
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
+   ![五特性叠加使能前后的YCSB workload a-f吞吐量对比柱状图，使能后各负载均明显高于未使能](figures/五特性叠加使能前后性能对比.png)
 
 ## 安全检查与加固
 
