@@ -10,26 +10,38 @@ RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值�
 
 在RocksDB的SST文件读取过程中，频繁的块校验操作导致了大量的CRC32计算，这一过程已成为明显的CPU性能瓶颈，如下图所示。通过优化CRC32算法使用基于硬件的加速指令，可以有效消减CRC32热点开销，显著缓解CPU压力。
 
-![](figures/zh-cn_image_0000002516993780.png)
+![](figures/zh-cn_image_CRC32计算的性能瓶颈.png)
 
 ### 原理描述
 
 本特性通过硬件加速CRC32减少校验开销，提升RocksDB在鲲鹏服务器中的整体性能表现与系统稳定性。
 
-RocksDB支持多种CRC32实现，能够根据运行环境自动选择最优方案。然而，在ARM平台下，当前版本尚未针对其架构提供专用优化，导致默认采用软件实现，性能显著低于硬件加速方案。尤其在内核态中CRC32函数调用频繁时，该算法已成为系统性能瓶颈，严重影响I/O吞吐。本特性基于鲲鹏920新型号处理器和鲲鹏950处理器，使用汇编、pmull指令等加速方式优化CRC32算法，来提升校验效率，业务功能逻辑无变化。
+RocksDB支持多种CRC32实现，能够根据运行环境自动选择最优方案。然而，在ARM平台下，当前版本尚未针对其架构提供专用优化，导致默认采用软件实现，性能显著低于硬件加速方案。尤其在数据库存储引擎内核中CRC32函数调用频繁时，该算法已成为系统性能瓶颈，严重影响I/O吞吐。本特性基于鲲鹏920新型号处理器和鲲鹏950处理器，使用汇编、pmull指令等加速方式优化CRC32算法，来提升校验效率，业务功能逻辑无变化。
 
 **查看方式**
 
-检查当前CPU是否支持CRC32：
+检查鲲鹏920新型号处理器是否支持CRC32特性：
 
 ```shell
 lscpu | grep Flags | grep crc32
 ```
 
-回显结果中包含crc32，表示CPU支持CRC32硬件指令。
+回显结果中包含crc32，满足本特性使能条件。
 
-```txt
+```output
 Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs sb dcpodp flagm2 frint svei8mm svef32mm svef64mm svebf16 i8mm bf16 dgh rng ecv
+```
+
+检查鲲鹏950处理器是否支持CRC32特性：
+
+```bash
+lscpu |grep Flags
+```
+
+回显结果中包含pmull、crc32、sve2、svepmull，满足本特性使能条件。
+
+```output
+Flags: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs sb dcpodp sve2 sveaes svepmull svebitperm svesha3 svesm4 flagm2 frint svei8mm svebf16 i8mm bf16 dgh rng ecv afp rpres wfxt rprfm hbc ls64 ls64_v
 ```
 
 ## 环境要求
@@ -46,17 +58,17 @@ Flags:                              fp asimd evtstrm aes pmull sha1 sha2 crc32 a
 
 | 项目 | 版本 | 获取地址 |
 | --- | --- | --- |
-| 操作系统 | openEuler 24.03 LTS SP3 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
-| 操作系统 | openEuler 22.03 LTS SP4 | [获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
-|RocksDB|6.1.2|[获取链接](https://github.com/facebook/rocksdb/tree/v6.1.2)|
-| RocksDB | 6.26.1 | [获取链接](https://github.com/facebook/rocksdb/tree/v6.26.1) |
+| 操作系统 | openEuler 24.03 LTS SP3 | [下载openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso) |
+| 操作系统 | openEuler 22.03 LTS SP4 | [下载openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso) |
+|RocksDB|6.1.2|[rocksdb仓库（v6.1.2分支）](https://github.com/facebook/rocksdb/tree/v6.1.2)|
+| RocksDB | 6.26.1 | [rocksdb仓库（v6.26.1分支）](https://github.com/facebook/rocksdb/tree/v6.26.1) |
 |GCC|10.3.1|openEuler 22.03 LTS SP4版本自带|
 | GCC | 12.3.1（24.03 LTS SP3） | 通过yum源安装 |
-| GCC | 12.3.1（22.03 LTS SP4） | [获取链接](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
+| GCC | 12.3.1（22.03 LTS SP4） | [下载gcc-12.3.1-2025.06-aarch64-linux.tar.gz](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 |Java|1.8.0|在openEuler 22.03 LTS SP4系统上，确保网络畅通情况下，利用Yum工具直接安装|
 | Java | 11 | 通过yum源安装 |
-| CRC32优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
-| CRC32优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取链接](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
+| CRC32优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取rocksdb-v6.1.2-patch](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
+| CRC32优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取0002_crc32c_opt.patch](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
 
 ## 安装环境
 
@@ -135,11 +147,6 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
         wget https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar --no-check-certificate
         wget https://repo1.maven.org/maven2/junit/junit/4.12/junit-4.12.jar --no-check-certificate
         ```
-
-6. （可选）通过YCSB工具测试可以得到使能本特性前后的性能提升效果，详细测试步骤请参见《[YCSB测试指导](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)》。<br>使用RocksDB CRC32优化及RocksDB Filter优化双特性叠加，可以使16U规格下两个用例workloada和workloadc的性能平均提升5%，优化前后对比效果如[**图 1** 双特性叠加使能前后性能对比](#优化特性使能前后性能对比)所示。
-
-    **图 1** 双特性叠加使能前后性能对比<a name="fig1620685015314"></a><a id="优化特性使能前后性能对比"></a><br>
-    ![](figures/优化特性使能前后性能对比.png "优化特性使能前后性能对比")
 
 ### For RocksDB 6.26.1
 
@@ -234,13 +241,10 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
       export LD_LIBRARY_PATH=~/Test/rocksdb-lib:$LD_LIBRARY_PATH
       ```
 
-7. 执行YCSB测试，验证CRC32C标矢量混合优化特性是否生效。
+## 性能收益
 
-   Prefetch预取优化、CRC32优化、BloomFilter查找优化、动态Level容量优化、Index Block Hash Search优化五特性叠加使用后，YCSB测试工具workload a-f的性能平均提升10%，优化前后对比效果如[五特性叠加使能前后性能对比](#五特性叠加使能前后性能对比)所示。
-
-   **图1** 五特性叠加使能前后性能对比<a id="五特性叠加使能前后性能对比"></a>
-
-   ![五特性叠加使能前后性能对比](figures/五特性叠加使能前后性能对比.png)
+通过YCSB工具测试可以得到使能本特性前后的性能提升效果，详细测试步骤请参见《[YCSB测试指导](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)》。
+使用RocksDB CRC32优化特性可以使16U规格下两个用例workloada和workloadc的性能平均提升5%~10%。
 
 ## 安全检查与加固
 
