@@ -4,7 +4,7 @@
 
 ### 简介
 
-本文主要介绍RocksDB数据库CRC32C优化特性的优化原理和安装使用方法。
+本文主要介绍RocksDB数据库CRC32优化特性的优化原理和安装使用方法。
 
 RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值存储引擎，广泛运用于数据库、缓存系统及实时数据处理等场景。
 
@@ -67,8 +67,8 @@ Flags: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asi
 | GCC | 12.3.1（22.03 LTS SP4） | [下载gcc-12.3.1-2025.06-aarch64-linux.tar.gz](https://mirrors.huaweicloud.com/kunpeng/archive/compiler/kunpeng_gcc/gcc-12.3.1-2025.06-aarch64-linux.tar.gz) |
 |Java|1.8.0|在openEuler 22.03 LTS SP4系统上，确保网络畅通情况下，利用Yum工具直接安装|
 | Java | 11 | 通过yum源安装 |
-| CRC32C优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取rocksdb-v6.1.2-patch](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
-| CRC32C优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取0002_crc32c_opt.patch](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
+| CRC32优化patch（适用RocksDB 6.1.2）|0001-crc32c-sve2-arm64-combined.patch|[获取rocksdb-v6.1.2-patch](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-crc32c-sve2-arm64-combined.patch)|
+| CRC32优化patch（适用RocksDB 6.26.1） | 0002_crc32c_opt.patch | [获取0002_crc32c_opt.patch](https://gitcode.com/boostkit/rocksdb/tree/master/src/rocksdb-6.26.1/feature-patches/0002_crc32c_opt.patch) |
 
 ## 安装环境
 
