@@ -1,12 +1,10 @@
 # RocksDB proxy (Kvrocks) 网络多路径 特性指南
 
+本文档介绍在使用openEuler操作系统的鲲鹏920新型号处理器上搭建使能环境、使能RocksDB proxy（Kvrocks）网络多路径特性并测试性能的方法，适用于业务网络占比较高的物理机或容器场景。
+
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
 ### 简介<a name="ZH-CN_TOPIC_0000002543640185"></a>
-
-本文主要介绍如何在使用openEuler操作系统的鲲鹏920新型号处理器上搭建使能环境，使能RocksDB proxy（Kvrocks）网络多路径特性和测试性能。
-
-### 原理描述<a name="ZH-CN_TOPIC_0000002543720175"></a>
 
 在互联网业务场景中，一台服务器上通常会部署多个容器业务，每个业务进程通过网络收发业务报文时，网卡中断处理的CPU核与业务进程所在CPU核大多数时候不在相同的NUMA节点，跨NUMA节点的内存访问会导致业务响应时延增加。
 
@@ -37,9 +35,9 @@ RocksDB proxy（Kvrocks）网络多路径特性适用于业务网络占比较高
 
 |项目|版本|获取地址|
 |--|--|--|
-|操作系统|openEuler 22.03 LTS SP4 for ARM<br>openEuler 24.03 LTS SP3 for ARM|[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
-|Kvrocks|2.2.0|[获取链接](https://github.com/apache/kvrocks/archive/refs/tags/v2.2.0.zip)|
-|RocksDB proxy（Kvrocks）网络多路径特性亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[获取链接](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[获取链接](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
+|操作系统|openEuler 22.03 LTS SP4 for ARM<br>openEuler 24.03 LTS SP3 for ARM|[openEuler 22.03 LTS SP4 ISO镜像下载地址](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>[openEuler 24.03 LTS SP3 ISO镜像下载地址](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
+|Kvrocks|2.2.0|[Kvrocks 2.2.0源码包下载地址](https://github.com/apache/kvrocks/archive/refs/tags/v2.2.0.zip)|
+|RocksDB proxy（Kvrocks）网络多路径特性亲和内核|kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm及以上版本<br>kernel-6.6.0-135.0.0.113.oe2403sp3.aarch64.rpm及以上版本|单击[openEuler 22.03 LTS SP4的update软件包仓库](https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/aarch64/Packages/)，在页面中搜索“kernel-5.10.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-5.10.0-**_xxx_**.0.0.**_xxx_**.oe2203sp4.aarch64.rpm所示，其中xxx越大，代表版本越新。<br>单击[openEuler 24.03 LTS SP3的update软件包仓库](https://repo.openeuler.org/openEuler-24.03-LTS-SP3/update/aarch64/Packages/)，在页面中搜索“kernel-6.6.0”，请在搜索结果中选择最新的内核版本进行下载。内核文件名如kernel-6.6.0-**_xxx_**.0.0.**_xxx_**.oe2403sp3.aarch64.rpm所示，其中xxx越大，代表版本越新。|
 
 >![](public_sys-resources/icon-note.gif) **说明：**
 >
@@ -56,31 +54,31 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 1. 下载支持本特性的内核RPM包，并将其上传到环境。在内核RPM所在目录下执行以下命令进行安装。
 
-    ```shell
+    ```bash
     rpm -ivh kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm --force
     ```
 
 2. 检查已经安装的内核，找出本特性内核的索引号，假设索引号为0。
 
-    ```shell
+    ```bash
     grubby --info=ALL | egrep -i 'index|title'
     ```
 
 3. 使用本特性内核的索引号“0”替换默认内核引导条目。
 
-    ```shell
+    ```bash
     grubby --set-default-index=0
     ```
 
 4. 查看默认内核，确认已替换成本特性内核。
 
-    ```shell
+    ```bash
     grubby --default-kernel
     ```
 
 5. 重启服务器。
 
-    ```shell
+    ```bash
     reboot
     ```
 
@@ -88,24 +86,24 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 1. 下载支持本特性的内核RPM包，并将其上传到环境。在内核RPM所在目录下执行以下命令进行安装。
 
-    ```shell
+    ```bash
     rpm -ivh kernel-5.10.0-301.0.0.204.oe2203sp4.aarch64.rpm --force
     ```
 
 2. 进入服务器管理平台iBMC。
 
     **图 1** 进入服务器管理平台iBMC<a name="fig0000000000000001"></a><a id="进入服务器管理平台iBMC"></a><br>
-    ![](./figures/zh-cn_image_0000002371673808.png)
+    ![iBMC登录页面，在地址栏输入管理网口IP地址并填写用户名与密码后登录服务器管理平台](./figures/zh-cn_image_0000002371673808.png)
     
 3. 进入虚拟控制台。
 
     **图 2** 进入虚拟控制台<a name="fig0000000000000002"></a><a id="进入虚拟控制台"></a><br>
-    ![](./figures/zh-cn_image_0000002430608949.png)
+    ![iBMC管理界面中打开远程虚拟控制台的菜单入口位置，单击后进入KVM控制台界面](./figures/zh-cn_image_0000002430608949.png)
 
 4. 强制重启。
 
     **图 3** 强制重启<a name="fig0000000000000003"></a><a id="强制重启"></a><br>
-    ![](./figures/zh-cn_image_0000002430569449.png)
+    ![虚拟控制台界面中“强制重启”按钮的位置，单击后对服务器执行重启操作](./figures/zh-cn_image_0000002430569449.png)
 
 5. 选择RocksDB proxy（Kvrocks）网络多路径特性亲和内核后等待重启完成。
 
@@ -117,7 +115,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 1. 在使能特性之前，在Server端执行以下命令进行基础环境配置。
 
-    ```shell
+    ```bash
     systemctl stop firewalld.service
     systemctl disable firewalld.service
     sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/sysconfig/selinux
@@ -129,19 +127,19 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 2. 设置firewalld在退出时清理内核模块。
 
-    ```shell
+    ```bash
     sed -i "s/CleanupModulesOnExit=no/CleanupModulesOnExit=yes/g" /etc/firewalld/*.conf
     ```
 
 3. 重启firewalld服务。
 
-    ```shell
+    ```bash
     systemctl restart firewalld
     ```
 
 4. 停止firewalld服务。
 
-    ```shell
+    ```bash
     systemctl stop firewalld
     ```
 
@@ -149,19 +147,19 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 1. 关闭irqbalance。
 
-    ```shell
+    ```bash
     systemctl stop irqbalance
     ```
 
 2. RocksDB proxy（Kvrocks）网络多路径特性模块依赖hisi_l3t.ko，需要确认该模块是否已加载。
 
-    ```shell
+    ```bash
     lsmod | grep hisi_l3t
     ```
 
     若上述命令输出为空，则需要加载hisi_l3t.ko。
 
-    ```shell
+    ```bash
     modprobe hisi_l3t
     ```
     
@@ -170,13 +168,13 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 
 3. 解压oenetcls.ko。
 
-    ```shell
+    ```bash
     unxz /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko.xz
     ```
 
 4. 配置网卡信息，启用特性，详细参数说明请参见[表 3](#参数说明)。
 
-    ```shell
+    ```bash
     insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko ifname="eth1#eth2" strategy=1
     ```
 
@@ -192,7 +190,7 @@ RocksDB proxy（Kvrocks）网络多路径特性（下文简称本特性）需要
 | match_ip_flag       | 数据包选择网卡队列时，为避免目的端口冲突，在匹配端口号的基础上，配置是否匹配目的IP地址。支持动态修改。<br><br>- 0：不匹配目的IP地址。<br>- 1：缺省值，匹配目的IP地址。                                                                                               | 可选    |
 | irqname             | 指定使用的网卡中断的通用字符串，用于解析指定网卡的终端名。默认值为comp。<br><br>取值范围为最大64字节的字符串                                                                                                                                 | 可选    |
 | rxq_multiplex_limit | 在配置网卡接收规则时，每个队列可以被多少tcp数据流复用，适用于网卡队列小于tcp流的场景，取值范围为1~64。默认值为1。                                                                                                                                | 可选    |
-| lo_rps_policy       | 本地回环口loopback rps打散开关。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：将软中断分散在当前流所在的NUMA节点内。<br>- 2：将软中断分散在当前流所在的cluster节点内内。                    | 可选    |
+| lo_rps_policy       | 本地回环口loopback rps打散开关。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：将软中断分散在当前流所在的NUMA节点内。<br>- 2：将软中断分散在当前流所在的cluster节点内。                    | 可选    |
 | rps_policy          | 网卡口rps打散功能。RPS的目的是把网卡收到的数据包“分发”给多个CPU核心去处理，从而利用多核优势，避免单个CPU成为瓶颈。<br><br>- 0：关闭功能。<br>- 1：将软中断分散在当前流所在的NUMA节点内。<br>- 2：将软中断分散在当前流所在的cluster节点内。                      | 可选    |
 
 ## 测试性能<a name="ZH-CN_TOPIC_0000002512120263"></a>
@@ -203,13 +201,13 @@ RocksDB proxy（Kvrocks）网络多路径特性针对Kvrocks 2.2版本和RocksDB
 
 1. 安装依赖包。
 
-    ```shell
+    ```bash
     yum install -y git make gcc gcc-c++ cmake snappy snappy-devel zlib zlib-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel sysstat java java-devel gflags gflags-devel flex python maven libstdc++-static
     ```
 
 2. 下载源码包。
 
-    ```shell
+    ```bash
     cd /home
     git clone https://github.com/apache/kvrocks.git
     cd kvrocks
@@ -220,7 +218,7 @@ RocksDB proxy（Kvrocks）网络多路径特性针对Kvrocks 2.2版本和RocksDB
 
     修改“kvrocks/cmake/rocksdb.cmake”文件，指定对应的RocksDB版本号和md5。
 
-    ```shell
+    ```bash
     vim cmake/rocksdb.cmake
     ```
 
@@ -235,7 +233,7 @@ RocksDB proxy（Kvrocks）网络多路径特性针对Kvrocks 2.2版本和RocksDB
 
 4. 编译。
 
-    ```shell
+    ```bash
     ./x.py build -j`nproc`
     ```
 
@@ -246,7 +244,7 @@ RocksDB proxy（Kvrocks）网络多路径特性针对Kvrocks 2.2版本和RocksDB
 
 5. 运行。
 
-    ```shell
+    ```bash
     ./build/kvrocks -c kvrocks.conf
     ```
 
@@ -256,13 +254,13 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 1. 安装依赖包。
 
-    ```shell
+    ```bash
     yum install python java maven -y
     ```
 
 2. 下载源码包。
 
-    ```shell
+    ```bash
     cd /home
     git clone https://github.com/brianfrankcooper/YCSB.git
     cd YCSB
@@ -346,7 +344,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 4. 编译。
 
-    ```shell
+    ```bash
     mvn -pl site.ycsb:redis-binding -am clean package
     ```
 
@@ -355,44 +353,44 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 1. 使能RocksDB proxy（Kvrocks）网络多路径特性。
 
     1. 根据[**使能特性**](#使能特性)章节配置基础环境，使能RocksDB proxy（Kvrocks）网络多路径特性（仅执行步骤1~步骤3 解压oenetcls.ko即可）。
-    2. 手动将网络中断号绑定到每个numa的后16个核上，一个cpu核一个中断号，防止与Kvrocks实例争抢CPU资源。
+    2. 手动将网络中断号绑定到每个NUMA的后16个核上，一个CPU核一个中断号，防止与Kvrocks实例争抢CPU资源。
     3. 启用RocksDB proxy（Kvrocks）网络多路径特性。
 
-        ```shell
+        ```bash
         insmod /usr/lib/modules/5.10.0-301.0.0.204.oe2203sp4.aarch64/kernel/net/oenetcls/oenetcls.ko mode=1 appname="kvrocks" ifname="网卡名称" strategy=3 debug=0 match_ip_flag=0 irqname="网卡名称" rxq_multiplex_limit=4 lo_rps_policy=2 rps_policy=2
         ```
         
         若是使能成功，在“mode=0”的情况下，启动Kvrocks进程后执行以下命令，能查看网卡是否成功启用RocksDB proxy（Kvrocks）网络多路径特性。而“mode=1”的情况暂时无法显式观测到现象。
         
-        ```shell
+        ```bash
         ethtool -u 网卡名称
         ```
         
-        ![](./figures/zh-cn_image_0000002485831282.png)
+        ![ethtool -u命令输出中网卡队列与中断绑核的对应关系，用于确认网络多路径特性已生效](./figures/zh-cn_image_0000002485831282.png)
 
 2. 配置Kvrocks。
 
-    半整机多实例场景下，每个Kvrocks需要绑定16个cpu核和对应numa的内存，于是每个numa有两个Kvrocks实例，整机需部署8个Kvrocks实例。每个实例启动都需要不同的配置文件“kvrocks.conf”。其中workers参数统一设置成16，port和dir两个参数根据实例的不同设置为不同的值。最后，启动8个Kvrocks实例。
+    半整机多实例场景下，每个Kvrocks需要绑定16个CPU核和对应NUMA的内存，于是每个NUMA有两个Kvrocks实例，整机需部署8个Kvrocks实例。每个实例启动都需要不同的配置文件“kvrocks.conf”。其中workers参数统一设置成16，port和dir两个参数根据实例的不同设置为不同的值。最后，启动8个Kvrocks实例。
 
 3. 使用YCSB进行压测。
 
-    进入YCSB根目录，为每个ycsb工具平均分配相同的cpu核进行压测。以下以单实例为例给定各个场景的测试命令。
+    进入YCSB根目录，为每个ycsb工具平均分配相同的CPU核进行压测。以下以单实例为例给定各个场景的测试命令。
 
     1. 导入500万数据。
 
-        ```shell
+        ```bash
         taskset -c 0-15 ./bin/ycsb load redis -s -P ./workloads/workloada -threads 16 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=0" -p "fieldcount=1"
         ```
 
     2. QPS，测试300秒的吞吐量。
 
-        ```shell
+        ```bash
         taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 0
         ```
 
     3. 时延，固定20万QPS测试300秒的时延。
 
-        ```shell
+        ```bash
         taskset -c 0-15 ./bin/ycsb run redis -s -P ./workloads/workloada -threads 128 -p "redis.host=$HOST" -p "redis.port=$PORT" -p "redis.timeout=0" -p "recordcount=5000000" -p "operationcount=0" -p "maxexecutiontime=300" -p "fieldcount=1" -p "readallfields=false" -target 200000
         ```
 
@@ -400,7 +398,7 @@ YCSB（Yahoo！Cloud Serving Benchmark）是雅虎开发的用来对云服务器
 
 ### 取消RocksDB proxy（Kvrocks）网络多路径特性<a name="ZH-CN_TOPIC_0000002512120268"></a>
 
-```shell
+```bash
 rmmod oenetcls
 systemctl start irqbalance
 ```
@@ -409,38 +407,38 @@ systemctl start irqbalance
 
 ASLR（Address Space Layout Randomization，地址空间布局随机化）是一种针对缓冲区溢出的安全保护技术，通过对堆、栈、共享库映射等线性区布局的随机化，增加攻击者预测目的地址的难度，防止攻击者直接定位攻击代码位置，达到阻止溢出攻击的目的。
 
-```shell
+```bash
 echo 2 >/proc/sys/kernel/randomize_va_space
 ```
 
-![](figures/zh-cn_image_0000002504021297.png)
+![开启ASLR后randomize_va_space参数的取值结果，用于确认地址空间布局随机化加固已生效](figures/zh-cn_image_0000002504021297.png)
 
 ## 参考信息<a name="ZH-CN_TOPIC_0000002549203370"></a><a id="如何查询网卡是否支持fdir功能"></a>
 
 执行下述命令查询网卡是否支持FDIR。
 
-```shell
+```bash
 ethtool -k 网卡名 |grep filters
 ```
 
 - 若输出结果包含ntuple-filters，没有标识[fixed]，则网卡支持FDIR。
 
     **图 4** ntuple-filters支持FDIR输出示例一<a name="fig0000000000000004"></a><a id="ntuple-filters支持FDIR输出示例一"></a><br>
-    ![](./figures/zh-cn_image_0000002522194017.png)
+    ![ethtool -k输出中ntuple-filters项处于开启且未标识[fixed]的示例，说明网卡支持FDIR](./figures/zh-cn_image_0000002522194017.png)
 
     **图 5** ntuple-filters支持FDIR输出示例二<a name="fig0000000000000005"></a><a id="ntuple-filters支持FDIR输出示例二"></a><br>
-    ![](./figures/zh-cn_image_0000002489834244.png)
+    ![ethtool -k输出中另一种ntuple-filters开启的展现形式，同样表明网卡支持FDIR](./figures/zh-cn_image_0000002489834244.png)
     
 - 若输出为ntuple-filters:off[fixed]，或输出为空，则网卡不支持FDIR。
 
     **图 6** ntuple-filters不支持FDIR输出示例一<a name="fig0000000000000006"></a><a id="ntuple-filters不支持FDIR输出示例一"></a><br>
-    ![](./figures/zh-cn_image_0000002522074025.png)
+    ![ethtool -k输出中ntuple-filters为off并带[fixed]标识的示例，说明网卡不支持FDIR](./figures/zh-cn_image_0000002522074025.png)
 
     **图 7** ntuple-filters不支持FDIR输出示例二<a name="fig0000000000000007"></a><a id="ntuple-filters不支持FDIR输出示例二"></a><br>
-    ![](./figures/zh-cn_image_0000002489994224.png)
+    ![ethtool -k输出中未检索到ntuple-filters相关项的空结果示例，说明网卡不支持FDIR](./figures/zh-cn_image_0000002489994224.png)
 
 ## 修订记录<a name="ZH-CN_TOPIC_0000002543640188"></a>
 
-|发布日期|修订记录|
-|--|--|
-|2026-06-30|第一次正式发布。|
+| 文档版本 | 发布日期       | 修改说明     |
+| ---- | ---------- | -------- |
+| 01   | 2026-06-30 | 第一次正式发布。 |
