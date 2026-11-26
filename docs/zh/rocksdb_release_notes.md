@@ -153,7 +153,7 @@
 
 ### 获取文档的方法<a name="ZH-CN_TOPIC_0000002544372643"></a>
 
-您可以通过访问[开源仓](https://gitcode.com/boostkit/rocksdb/tree/rocksdb-v6.1.2-patch/docs)浏览和获取相关文档。
+您可以通过访问[开源仓](https://gitcode.com/boostkit/rocksdb/tree/master/docs)浏览和获取相关文档。
 
 ## 26.0.RC1
 
@@ -198,7 +198,7 @@
 
 ##### RocksDB适配64K页优化
 
-为了提升RocksDB在鲲鹏服务器中的整体性能表现与系统稳定性，鲲鹏BoostKit数据库使能套件新增RocksDB适配64K页优化特性，该特性通过编译64K大页内核来有效减少TLB的失效率，同时添加了jemalloc在不同系统页下的判断。
+为了提升RocksDB在鲲鹏处理器中的整体性能表现与系统稳定性，鲲鹏BoostKit数据库使能套件新增RocksDB适配64K页优化特性，该特性通过编译64K大页内核来有效减少TLB的失效率，同时添加了jemalloc在不同系统页下的判断。
 
 ##### RocksDB CRC32优化
 
@@ -206,7 +206,7 @@
 
 ##### RocksDB Filter优化
 
-新增RocksDB Filter优化特性，通过优化布隆过滤器的构建方法，减少无效IO，提升RocksDB在鲲鹏服务器中的整体性能表现与系统稳定性。
+新增RocksDB Filter优化特性，通过优化布隆过滤器的构建方法，减少无效IO，提升RocksDB在鲲鹏处理器中的整体性能表现与系统稳定性。
 
 #### 已解决的问题
 
@@ -221,9 +221,9 @@
 |文档名称|内容简介|交付形式|
 |--|--|--|
 |《RocksDB适配64K页优化 特性指南》|本文档提供RocksDB适配64K页优化特性的环境要求、特性使能指导。|开源仓|
-|《RocksDB CRC32优化 特性指南》|本文档提供RocksDB适配64K页优化特性的环境要求、特性使能指导。|开源仓|
-|《RocksDB Filter优化 特性指南》|本文档提供RocksDB适配64K页优化特性的环境要求、特性使能指导。|开源仓|
+|《RocksDB CRC32优化 特性指南》|本文档提供RocksDB CRC32优化特性的环境要求、特性使能指导。|开源仓|
+|《RocksDB Filter优化 特性指南》|本文档提供RocksDB Filter优化特性的环境要求、特性使能指导。|开源仓|
 
 ### 获取文档的方法<a name="ZH-CN_TOPIC_0000002544372643"></a>
 
-您可以通过访问[开源仓](https://gitcode.com/boostkit/rocksdb/tree/rocksdb-v6.1.2-patch/docs)浏览和获取相关文档。
+您可以通过访问[开源仓](https://gitcode.com/boostkit/rocksdb/tree/master/docs)浏览和获取相关文档。
