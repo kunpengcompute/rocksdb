@@ -80,7 +80,7 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
     ```
 
 6. 编译RocksDB的jar包和相关动态库，以使用优化特性。
-    1. 修改RocksDB源代码在编译jar包和相关动态库时的bug。
+    1. 修改verifyCompression参数值。
         1. 打开文件。
 
             ```bash
