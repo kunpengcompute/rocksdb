@@ -2,6 +2,8 @@
 
 简体中文 | [English](./README_EN.md)
 
+ 本文档介绍元数据加速特性，说明该特性在RocksDB基础上结合华为自研算法进行性能加速优化，涵盖目录结构、版本说明、环境部署与快速入门，适用于部署和使用该特性的开发者。
+
 ## 项目介绍<a name="ZH-CN_TOPIC_0000002551532807"></a>
 
 元数据加速特性是华为自主研发，在RocksDB基础上优化后的存储引擎性能加速特性。
@@ -87,10 +89,10 @@ RocksDB是一款高性能、持久化的嵌入式kv（key value）存储引擎�
 
 ## License<a name="ZH-CN_TOPIC_0000002520662484"></a>
 
-本项目的代码适用于Apache License 2.0许可证，具体请参见[LICENSE文件](LICENSE)。
+本项目的代码适用于Apache License 2.0许可证，具体请参见[LICENSE文件](docs/LICENSE)。
 
 本项目的文档适用于CC-BY 4.0许可证，具体请参见[LICENSE文件](docs/LICENSE)。
 
 ## 贡献声明<a name="ZH-CN_TOPIC_0000002551662481"></a>
 
-欢迎大家为社区做贡献，如果使用过程中有任何问题/建议，或者需要反馈特性需求和bug报告，可以提交[Issues](https://gitcode.com/boostkit/community/blob/master/docs/contributor/issue-submit.md)联系我们，具体贡献方法可参考[这里](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md)。同时也欢迎大家在[讨论专区](https://gitcode.com/boostkit/community/discussions)展开讨论交流。感谢您的支持。
+欢迎大家为社区做贡献，如果使用过程中有任何问题/建议，或者需要反馈特性需求和bug报告，可以提交[Issues](https://gitcode.com/boostkit/community/blob/master/docs/contributor/issue-submit.md)联系我们，具体贡献方法可参考[贡献指南](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md)。同时也欢迎大家在[讨论专区](https://gitcode.com/boostkit/community/discussions)展开讨论交流。感谢您的支持。

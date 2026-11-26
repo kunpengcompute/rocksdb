@@ -1,5 +1,7 @@
 # 安装指南<a name="ZH-CN_TOPIC_0000002521559456"></a>
 
+本文档介绍鲲鹏服务器上RocksDB的编译安装方法，涵盖环境要求、KSAL闭源算法包与KAEZstd算法安装、RocksDB编译安装及加速特性验证，适用于在鲲鹏服务器openEuler、Debian环境部署RocksDB的用户。
+
 ## 环境要求<a name="ZH-CN_TOPIC_0000002551682863"></a>
 
 本文基于鲲鹏服务器和openEuler、Debian操作系统提供指导，在正式操作前请确保软硬件均满足要求。
@@ -56,7 +58,7 @@ RocksDB读写流程中存在一些热点函数，如CRC、memcpy等，使用优�
 
     显示如下：
 
-    ```txt
+    ```output
     Name        : libksal
     Version     : 1.10.0
     Release     : 1
@@ -78,8 +80,6 @@ RocksDB读写流程中存在一些热点函数，如CRC、memcpy等，使用优�
     Component Version:      1.10.0
     Component AppendInfo:   kunpeng
     ```
-
-
 
 ## 安装KAEZstd算法<a name="ZH-CN_TOPIC_0000002520522886"></a>
 
@@ -145,7 +145,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
             回显信息如下。
 
-            ```sh
+            ```output
             uacce                  32768  3 hisi_sec2,hisi_qm,hisi_zip
             ```
 
@@ -234,7 +234,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
     256
     ```
 
-    另开窗口执行[功能测试](#section1)，执行任务时若上述回显中队列数量发生变化，表明KAE压缩加速硬件成功使能。
+    另开窗口执行[db_bench功能测试](#section1)，执行任务时若上述回显中队列数量发生变化，表明KAE压缩加速硬件成功使能。
 
     ```txt
     Every 0.2s: cat /sys/class/uacce/hisi_zip-0/available_instances/sys/class/uacce/hisi_zip...  localhost.localdomain:
@@ -243,8 +243,6 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
     256
     256
     ```
-
-
 
 ### Debian<a name="ZH-CN_TOPIC_0000002520682866"></a>
 
@@ -307,7 +305,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
             回显信息如下。
 
-            ```txt
+            ```output
             uacce                  32768  3 hisi_sec2,hisi_qm,hisi_zip
             ```
 
@@ -326,7 +324,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
             回显信息如下。
 
-            ```txt
+            ```output
             -rwxr-xr-x. 1 root root     961 Aug 22 17:23 /usr/local/lib/libwd_comp.la
             lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so -> libwd_comp.so.2.6.0
             lrwxrwxrwx. 1 root root      19 Aug 22 17:23 /usr/local/lib/libwd_comp.so.2 -> libwd_comp.so.2.6.0
@@ -406,8 +404,6 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
     256
     ```
 
-
-
 ## 编译安装RocksDB<a name="ZH-CN_TOPIC_0000002520682864"></a>
 
 ### openEuler<a name="ZH-CN_TOPIC_0000002551722883"></a>
@@ -438,7 +434,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
     执行成功如下图所示：
 
-    ![](figures/feature_guide.png)
+    ![单元测试build.sh UTONLY执行成功的终端回显，显示用例的执行情况和通过情况](figures/feature_guide.png)
 
 4. 以Release模式编译RocksDB。
 
@@ -469,11 +465,11 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
     - 回显包含以下信息表示已使能KSAL鲲鹏加速算法库。
 
-        ![](figures/34CC32D9-A941-40E4-AAAB-61FA4B68DA4C.png)
+        ![ldd查询librocksdb.so依赖的回显，显示已链接KSAL鲲鹏加速库算法库](figures/34CC32D9-A941-40E4-AAAB-61FA4B68DA4C.png)
 
     - 回显包含以下信息表示已使能KAEZstd加速特性。
 
-        ![](figures/BAF45CC0-F721-4D1E-8A1E-93740EE98B85.png)
+        ![ldd查询librocksdb.so依赖的回显，显示已使能KAEZstd加速特性](figures/BAF45CC0-F721-4D1E-8A1E-93740EE98B85.png)
 
 6. 安装RocksDB。
 
@@ -550,7 +546,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
 
         回显包含以下信息则表示已使能KAEZstd加速特性。
 
-        ![](figures/C346EE9E-FA37-41BA-9078-D208DEA0A71C.png)
+        ![Debian环境ldd librocksdb.so的回显，显示已使能KAEZstd加速特性](figures/C346EE9E-FA37-41BA-9078-D208DEA0A71C.png)
 
 5. 安装RocksDB。
 
@@ -565,8 +561,7 @@ RocksDB写场景中，当写入数据达到一定数量时，后台线程需要�
     ```
 
 ## 修订记录
-| 发布日期  | 修改说明       |
-|-------|----------|
-| 2025-12-30 | 第三次正式发布。 <br> RocksDB编译安装适配Debian。|
-| 2024-06-30 | 第二次正式发布。<br> RocksDB支持硬件卸载。|
-| 2025-12-30 | 第一次正式发布。|
+
+| 文档版本 | 发布日期  | 修改说明       |
+| ------- | ------- | ----------|
+| 01 | 2025-12-30 | 第一次正式发布。<br>新增支持RocksDB编译安装适配Debian。|
