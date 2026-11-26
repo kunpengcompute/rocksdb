@@ -1,10 +1,10 @@
 # RocksDB适配64K页优化 特性指南
 
+本文档介绍RocksDB适配64K页优化特性，通过减少TLB缺失提升内存访问效率，并给出重新编译64K页内核、导入patch文件、编译RocksDB的安装使用方法，适用于需要提升高并发写入吞吐性能的用户。
+
 ## 特性描述<a name="ZH-CN_TOPIC_0000002512120258"></a>
 
 ### 简介<a name="ZH-CN_TOPIC_0000002543640185"></a>
-
-本文主要介绍RocksDB适配64K页优化特性的优化原理和安装使用方法。
 
 RocksDB是由Meta（原Facebook）开发的一款高性能、嵌入式、持久化键值存储引擎，基于C++实现，支持嵌入式使用，也可作为客户端-服务器（C/S）模式下的存储数据库。RocksDB采用Log-Structured Merge-Tree（LSM-Tree）数据结构，通过将随机写入转化为顺序写入，显著提升写入吞吐量，尤其适用于高并发写入场景。同时，RocksDB在点查询与范围查询方面也表现出色，广泛应用于数据库、缓存系统及实时数据处理等场景。
 
@@ -22,7 +22,7 @@ TLB是CPU内存管理单元（MMU）中的一个关键硬件缓存，用于存�
 
 查看当前Page Size大小：
 
-```shell
+```bash
 getconf PAGESIZE
 ```
 
@@ -42,11 +42,11 @@ getconf PAGESIZE
 
 |项目|版本|获取地址|
 |--|--|--|
-|操作系统|openEuler 22.03 LTS SP4、openEuler 24.03 LTS SP3|openEuler 22.03 LTS SP4：[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>openEuler 24.03 LTS SP3：[获取链接](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
-|RocksDB|6.1.2|[获取链接](https://github.com/facebook/rocksdb/tree/v6.1.2)|
+|操作系统|openEuler 22.03 LTS SP4、openEuler 24.03 LTS SP3|[openEuler 22.03 LTS SP4安装镜像下载](https://repo.huaweicloud.com/openeuler/openEuler-22.03-LTS-SP4/ISO/aarch64/openEuler-22.03-LTS-SP4-everything-aarch64-dvd.iso)<br>[openEuler 24.03 LTS SP3安装镜像下载](https://repo.huaweicloud.com/openeuler/openEuler-24.03-LTS-SP3/ISO/aarch64/openEuler-24.03-LTS-SP3-everything-aarch64-dvd.iso)|
+|RocksDB|6.1.2|[RocksDB 6.1.2源码仓库](https://github.com/facebook/rocksdb/tree/v6.1.2)|
 |GCC|10.3.1|openEuler 22.03 LTS SP4版本自带|
 |Java|1.8.0|在openEuler 22.03 LTS SP4系统上，确保网络畅通情况下，利用Yum工具直接安装|
-|patch文件|0001-64k-jemalloc-check.patch|[获取链接](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-64k-jemalloc-check.patch)|
+|patch文件|0001-64k-jemalloc-check.patch|[0001-64k-jemalloc-check.patch补丁文件](https://gitcode.com/boostkit/rocksdb/blob/rocksdb-v6.1.2-patch/0001-64k-jemalloc-check.patch)|
 
 ## 安装和使用特性<a name="ZH-CN_TOPIC_0000002512120260"></a>
 
@@ -55,7 +55,7 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 1. 调整openEuler操作系统内核的Page Size为64KB，并重启选择64K页的内核。详细操作请参见《MySQL 调优指南》的[调整内核Page Size为64KB](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/ecosystemEnable/MySQL/kunpengdbstune_05_0012.html)。
 2. 使用git克隆RocksDB并切换到6.1.2版本，放在主目录“\~”下。
 
-    ```shell
+    ```bash
     cd ~
     git clone https://github.com/facebook/rocksdb.git
     cd rocksdb/
@@ -64,7 +64,7 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 
 3. 安装yum依赖和环境变量配置。
 
-    ```shell
+    ```bash
     yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
     
     export JAVA_HOME=/usr/lib/jvm/java-1.8.0
@@ -74,23 +74,23 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 4. 获取优化特性的补丁文件，将其上传到主目录“\~”下。获取路径请参见[**表 2** 操作系统和软件要求](#操作系统和软件要求)。
 5. 执行以下命令，合入优化特性。没有输出则说明合入成功。
 
-    ```shell
+    ```bash
     cd ~/rocksdb
     git apply --whitespace=nowarn < ~/0001-64k-jemalloc-check.patch
     ```
 
 6. 编译RocksDB的jar包和相关动态库，以使用优化特性。
-    1. 修改RocksDB源代码在编译jar包和相关动态库时的bug。
+    1. 修改verifyCompression参数值。
         1. 打开文件。
 
-            ```shell
+            ```bash
             cd ~/rocksdb
             vim java/src/main/java/org/rocksdb/BlockBasedTableConfig.java
             ```
 
         2. 按“i”进入编辑模式，修改第38行，将true改为false。
 
-            ```txt
+            ```java
             # 修改第 38 行，true 改为 false
             verifyCompression = false;
             ```
@@ -99,7 +99,7 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 
     2. 编译RocksDB的jar包和相关动态库。
 
-        ```txt
+        ```bash
         PORTABLE=1 DEBUG_LEVEL=0 make rocksdbjava -j`nproc` DISABLE_WARNING_AS_ERROR=1 DISABLE_JEMALLOC=1
         ```
 
@@ -108,7 +108,7 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 
     3. （可选）若是编译过程中出现缺少jar包的错误，可以先清理文件，再手动下载缺少的jar包，然后重新进行编译。
 
-        ```shell
+        ```bash
         cd ~/rocksdb
         make clean
         mkdir -p java/test-libs
@@ -123,20 +123,20 @@ RocksDB适配64K页优化特性针对RocksDB 6.1.2版本开发，以编译内核
 7. （可选）通过YCSB工具测试可以得到使能本特性前后的性能提升效果，详细测试步骤请参见《[YCSB测试指导](https://www.hikunpeng.com/document/detail/zh/kunpengdbs/testguide/tstg/kunpengycsbformong_11_0001.html)》。RocksDB适配64K页优化可以使16U规格下两个用例workloada和workloadc的性能平均提升5%，优化前后对比效果如[**图 1** 优化特性使能前后性能对比](#优化特性使能前后性能对比)所示。
 
     **图 1** 优化特性使能前后性能对比<a name="fig144438251669"></a><a id="优化特性使能前后性能对比"></a><br>
-    ![](figures/优化特性使能前后性能对比-0.png "优化特性使能前后性能对比-0")
+    ![使能64K页优化特性前后YCSB两个用例的查询性能柱状对比，使能后性能明显提升](figures/优化特性使能前后性能对比-0.png "优化特性使能前后性能对比-0")
 
 ## 安全检查与加固<a name="ZH-CN_TOPIC_0000002549203369"></a>
 
 ASLR（Address Space Layout Randomization，地址空间布局随机化）是一种针对缓冲区溢出的安全保护技术，通过对堆、栈、共享库映射等线性区布局的随机化，增加攻击者预测目的地址的难度，防止攻击者直接定位攻击代码位置，达到阻止溢出攻击的目的。
 
-```shell
+```bash
 echo 2 >/proc/sys/kernel/randomize_va_space
 ```
 
-![](figures/zh-cn_image_0000002504021297.png)
+![查看内核randomize_va_space参数确认ASLR已开启的安全加固终端截图](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录<a name="ZH-CN_TOPIC_0000002543640187"></a>
 
-|发布日期|修订记录|
-|--|--|
-|2026-03-30|第一次正式发布。|
+|文档版本| 发布日期   | 修改说明         |
+|----------| ---------- | ---------------- |
+|01| 2026-03-30 | 第一次正式发布。 |
