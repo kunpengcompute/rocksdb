@@ -1,16 +1,16 @@
 # RocksDB CRC32优化 特性指南
 
+本文档介绍RocksDB CRC32优化特性，通过硬件加速CRC32减少SST文件块校验开销，提升RocksDB在鲲鹏处理器上的性能表现与系统稳定性，适用于在鲲鹏处理器上部署和使用RocksDB的用户。
+
 ## 特性描述
 
 ### 简介
-
-本文主要介绍RocksDB数据库CRC32优化特性的优化原理和安装使用方法。
 
 RocksDB是Meta开发的基于C++和LSM-Tree的高性能嵌入式持久化键值存储引擎，广泛运用于数据库、缓存系统及实时数据处理等场景。
 
 在RocksDB的SST文件读取过程中，频繁的块校验操作导致了大量的CRC32计算，这一过程已成为明显的CPU性能瓶颈，如下图所示。通过优化CRC32算法使用基于硬件的加速指令，可以有效消减CRC32热点开销，显著缓解CPU压力。
 
-![](figures/zh-cn_image_CRC32计算的性能瓶颈.png)
+![RocksDB读取SST文件时CRC32校验开销的CPU热点分析图，块校验成为主要性能瓶颈](figures/zh-cn_image_CRC32计算的性能瓶颈.png)
 
 ### 原理描述
 
@@ -22,7 +22,7 @@ RocksDB支持多种CRC32实现，能够根据运行环境自动选择最优方�
 
 检查鲲鹏920新型号处理器是否支持CRC32特性：
 
-```shell
+```bash
 lscpu | grep Flags | grep crc32
 ```
 
@@ -78,7 +78,7 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
 
 1. 使用git克隆RocksDB并切换到6.1.2版本，放在主目录“\~”下。
 
-    ```shell
+    ```bash
     cd ~
     git clone https://github.com/facebook/rocksdb.git
     cd rocksdb/
@@ -87,7 +87,7 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
 
 2. 安装yum依赖和环境变量配置。
 
-    ```shell
+    ```bash
     yum install -y git make gcc-c++ snappy snappy-devel zlib zlib-devel bzip2 bzip2-devel lz4 lz4-devel zstd zstd-devel java java-devel java-11-openjdk-devel gflags gflags-devel flex python maven
     
     export JAVA_HOME=/usr/lib/jvm/java-1.8.0
@@ -100,7 +100,7 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
 
 4. 执行以下命令，合入优化特性。没有输出则说明合入成功。
 
-    ```shell
+    ```bash
     cd ~/rocksdb
     git apply --whitespace=nowarn < ~/0001-crc32c-sve2-arm64-combined.patch
     ```
@@ -109,13 +109,13 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
     1. 修改原生代码在编译jar包和相关动态库时的bug。
         1. 进入修改原生代码路径。
 
-            ```shell
+            ```bash
             cd ~/rocksdb
             ```
 
         2. 打开BlockBasedTableConfig.java文件。
 
-            ```shell
+            ```bash
             vim java/src/main/java/org/rocksdb/BlockBasedTableConfig.java
             ```
 
@@ -136,7 +136,7 @@ RocksDB CRC32优化特性针对RocksDB 6.1.2版本进行开发，以patch文件�
 
     3. （可选）若是编译过程中报缺少jar包的错误，可以先清理文件，再手动下载缺少的jar包，然后重新进行编译。
 
-        ```shell
+        ```bash
         cd ~/rocksdb
         make clean
         mkdir -p java/test-libs
@@ -255,7 +255,7 @@ echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
 cat /proc/sys/kernel/randomize_va_space
 ```
 
-![ASLR安全检查示意图](figures/zh-cn_image_0000002504021297.png)
+![开启ASLR的命令执行回显，randomize_va_space取值为2表示堆栈与共享库映射地址完全随机化](figures/zh-cn_image_0000002504021297.png)
 
 ## 修订记录
 
